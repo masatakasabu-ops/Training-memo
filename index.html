@@ -55,7 +55,7 @@ h2 small { font-weight: 400; letter-spacing: 0; margin-left: 6px; }
 section { min-width: 0; }
 .view { display: grid; gap: 22px; }
 
-.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: var(--line); }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--line); }
 .tabs button {
   min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--muted);
   font: inherit; font-weight: 700; cursor: pointer;
@@ -173,6 +173,27 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 .actual.none { color: var(--muted); font-family: var(--font-body); }
 .emptyday { font-size: .8rem; color: var(--muted); }
 
+/* 種目の図解 */
+.exlib { display: grid; gap: 22px; }
+.exgroup { display: grid; gap: 10px; scroll-margin-top: 16px; }
+.exgroup h3 { margin: 0; font-size: 1.05rem; text-wrap: balance; }
+.exgroup > p { margin: 0; font-size: .8rem; color: var(--muted); }
+.exnav { display: flex; flex-wrap: wrap; gap: 6px; }
+.exnav a { font-size: .8rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg); text-decoration: none; }
+.ex { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); scroll-margin-top: 16px; min-width: 0; }
+.ex h4 { margin: 0; font-size: 1rem; }
+.ex .aim { margin: 0; font-size: .8rem; color: var(--forest); }
+.frames { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 4px; }
+.frames.one { grid-template-columns: minmax(0, 220px); justify-content: center; }
+.frame { display: grid; justify-items: center; gap: 2px; min-width: 0; }
+.frame span { font-size: .7rem; color: var(--muted); }
+.fig { width: 100%; max-width: 200px; height: auto; border-radius: 8px; background: color-mix(in srgb, var(--line) 30%, transparent); }
+.frames .arrow { color: var(--accent); font-weight: 700; }
+.ex ol { margin: 0; padding-left: 1.3em; font-size: .88rem; display: grid; gap: 3px; }
+.ex ul { margin: 0; padding-left: 1.1em; font-size: .8rem; color: var(--muted); display: grid; gap: 2px; }
+.how { display: grid; gap: 10px; }
+.how > h4 { margin: 0; font-size: .8rem; color: var(--muted); letter-spacing: .08em; }
+
 .sheet-bg { position: fixed; inset: 0; background: color-mix(in srgb, #000 45%, transparent); z-index: 20; }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; max-height: 88vh; overflow-y: auto;
@@ -197,6 +218,7 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
   <div class="tabs" role="tablist">
     <button id="tab-memo" type="button" role="tab" aria-selected="true">記録</button>
     <button id="tab-plan" type="button" role="tab" aria-selected="false">予定</button>
+    <button id="tab-ex" type="button" role="tab" aria-selected="false">種目</button>
   </div>
 
   <div id="status" class="status" hidden></div>
@@ -260,6 +282,11 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
     <div id="weekTotal" class="weektotal"></div>
     <button id="toToday" class="ghost" type="button">今日に戻る</button>
   </div>
+
+  <div id="exView" class="view" hidden>
+    <div id="exNav" class="exnav"></div>
+    <div id="exLib" class="exlib"></div>
+  </div>
 </main>
 
 <div id="memoBar" class="savebar">
@@ -273,6 +300,7 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 <div id="sheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
   <div class="inner">
     <h3 id="sheetTitle">予定を追加</h3>
+    <div id="edHow" class="how" hidden></div>
     <label class="field" for="edTpl" id="edTplWrap">よく使うメニュー
       <select id="edTpl"><option value="">選ぶと下に入ります</option></select>
     </label>
@@ -313,9 +341,12 @@ const STRIDES = "5x\n- 0.1km 3:20/km Pace\n- 0.1km 6:30/km Pace";
 const TEMPLATES = [
   { name: "ジョグ40分＋流し", cat: "WORKOUT", desc: `- 40m 5:30/km Pace\n\n${STRIDES}` },
   { name: "ジョグ50分＋流し", cat: "WORKOUT", desc: `- 50m 5:30/km Pace\n\n${STRIDES}` },
-  { name: "補強A（脚力・登り）", cat: "WORKOUT", type: "WeightTraining", desc: "約20分。各2セット、左右とも。\n\n・ブルガリアンスクワット 片脚8〜10回（膝が内側に入らないように）\n・ステップアップ 片脚10回（膝の高さの台）\n・片脚ルーマニアンデッドリフト 10回\n・カーフレイズ 片脚15回" },
-  { name: "補強B（股関節・体幹）", cat: "WORKOUT", type: "WeightTraining", desc: "約15分。各2セット、左右とも。\n\n・横向き脚上げ 20回\n・クラムシェル 20回\n・サイドプランク 30〜40秒\n・デッドバグ 10回\n・片脚ヒップリフト 12回" },
-  { name: "補強C（足首・バランス・下り）", cat: "WORKOUT", type: "WeightTraining", desc: "約15分。各2セット、左右とも。\n\n・片脚立ち（目を閉じて） 30秒\n・ステップダウン 10回（3秒かけて降りる）\n・片脚ホップ 前後・左右 各10回\n・カーフレイズ 片脚15回" },
+  { name: "O-プレハブ Lv1", cat: "WORKOUT", type: "WeightTraining", desc: "ランの前に10分。各2セット、左右とも。\n\n・片脚カーフレイズ（平地） 15回\n・ランナーズポーズ 30秒（片脚立ちで腕振りの姿勢、反対の膝を上げて保つ）\n・片脚立ち 30秒\n・片脚スター 各方向3回（反対の足先を前・横・後ろにタッチ）\n・両脚ホップ 前後・左右 各10回" },
+  { name: "O-プレハブ Lv2", cat: "WORKOUT", type: "WeightTraining", desc: "ランの前に10分。各2セット、左右とも。\n\n・片脚カーフレイズ（段差でかかとを下まで） 15回\n・ランナーズポーズ（目を閉じて） 30秒\n・片脚立ち（芝やクッションの上） 30秒\n・片脚スター 各方向3回\n・片脚ホップ 前後・左右 各10回（静かに着地）" },
+  { name: "O-プレハブ Lv3", cat: "WORKOUT", type: "WeightTraining", desc: "ランの前に10分。各2セット、左右とも。\n\n・片脚カーフレイズ（段差、5秒かけて下ろす） 15回\n・片脚ジャンプ→着地で2秒止まる 8回\n・片脚立ちで地図を読む 30秒（レッグを1本追う）\n・片脚ホップ 4方向連続 3周\n・不整地で片脚着地 8回" },
+  { name: "補強A（登り）", cat: "WORKOUT", type: "WeightTraining", desc: "約20分。上から順に1周し、2〜3分休んでもう1周。左右とも。自重のみ。\n\n・スクワットジャンプ 6回（静かに着地）\n・ブルガリアンスクワット 10回（3秒かけて下ろす）\n・ステップアップ＋膝上げ 10回（膝より少し高い台。反対の膝を胸まで）\n・片脚ヒップリフト 12回（片足を台に乗せて）\n・片脚カーフレイズ 15回（段差で）\n・膝を曲げたカーフレイズ 15回" },
+  { name: "補強B（腸脛靭帯・足首）", cat: "WORKOUT", type: "WeightTraining", desc: "約15分。2周、左右とも。自重のみ。\n\n・横向き脚上げ 20回（壁にかかとを沿わせて）\n・ヒップハイク 15回（段差の端に片脚で立ち、反対の骨盤を下げて上げる）\n・スケータースクワット 8回\n・足首の4方向歩き つま先・かかと・外側・内側で各10m\n・片脚立ちで足裏の外側に体重を移して戻す 15回\n・タオルギャザー 1分" },
+  { name: "補強C（体幹）", cat: "WORKOUT", type: "WeightTraining", desc: "約10分。2周。\n\n・地図持ちプランク 各20秒（片手を前に伸ばす。左右交互）\n・サイドプランク＋上の脚上げ 30秒（左右）\n・デッドバグ 10回\n・バードドッグ 10回（四つ這いで対角の手足を伸ばす）\n・ゆっくりマウンテンクライマー 20回（膝を胸に引きつける）\n・ホロウボディ 20秒（あおむけで手足を浮かせる）" },
   { name: "200m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 0.2km 3:35/km Pace\n- 0.2km 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n200mは42〜44秒。" },
   { name: "400m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 0.4km 3:22/km Pace\n- 0.2km 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n400mは80〜82秒。" },
   { name: "閾値走 5分×4", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n4x\n- 5m 4:05/km Pace\n- 90s 6:00/km Pace\n\n- 10m 5:40/km Pace" },
@@ -324,6 +355,13 @@ const TEMPLATES = [
   { name: "起伏ロング走85分", cat: "WORKOUT", desc: "- 85m 5:50/km Pace\n\n起伏のある道でゆっくり。下りは抑える。" },
   { name: "休養", cat: "NOTE", desc: "睡眠7時間以上を目標に。" },
 ];
+
+// 補強のテンプレートには、Intervals.icu や COROS からも図解を開けるようリンクを付ける
+const EX_LINK = { "O-プレハブ": "P", "補強A": "A", "補強B": "B", "補強C": "C" };
+for (const t of TEMPLATES) {
+  const g = Object.entries(EX_LINK).find(([k]) => t.name.startsWith(k));
+  if (g) t.desc += `\n\n図解：https://masatakasabu-ops.github.io/Training-memo/#ex-menu-${g[1]}`;
+}
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -571,9 +609,12 @@ function openEditor(ev, date) {
   $("edName").value = ev ? ev.name || "" : "";
   $("edDesc").value = ev ? ev.description || "" : "";
   $("edDelete").hidden = !ev;
+  renderHow(ev ? ev.description : "");
   $("edDelete").classList.remove("armed"); $("edDelete").textContent = "削除";
   $("sheet").hidden = false; $("sheetBg").hidden = false;
-  (ev ? $("edName") : $("edTpl")).focus();
+  // 既存の予定は図解が見えるよう先頭から表示する
+  if (!ev) $("edTpl").focus();
+  $("sheet").scrollTop = 0;
 }
 function closeEditor() { $("sheet").hidden = true; $("sheetBg").hidden = true; editing = null; }
 
@@ -582,6 +623,7 @@ $("edTpl").addEventListener("change", () => {
   if (!t) return;
   $("edName").value = t.name; $("edCat").value = t.cat; $("edDesc").value = t.desc;
   edType = t.type || "Run";
+  renderHow(t.desc);
 });
 
 $("edSave").addEventListener("click", async () => {
@@ -630,21 +672,356 @@ $("prevMonth").addEventListener("click", () => goMonth(-1));
 $("nextMonth").addEventListener("click", () => goMonth(1));
 $("toToday").addEventListener("click", () => { monthStart = firstOfMonth(new Date()); goMonth(0); });
 
+/* ---------- 種目の図解 ---------- */
+
+// 棒人間の骨格。角度は度。脚・腕は真下が0で前（右）が正、胴体は真上が0で前が正。
+// la/lb = 手前/奥の脚 [もも, すね, 足先]、aa/ab = 手前/奥の腕 [上腕, 前腕]。足先は前向き水平が0、下向きが負。
+const SEG = { torso: 28, thigh: 20, shin: 20, foot: 7, upper: 14, fore: 13, head: 6 };
+const FLOOR = 84;
+const rad = d => d * Math.PI / 180;
+const limb = (p, a, len) => [p[0] + len * Math.sin(rad(a)), p[1] + len * Math.cos(rad(a))];
+
+function figure(pose) {
+  const t = pose.t || 0;
+  const neck = [SEG.torso * Math.sin(rad(t)), -SEG.torso * Math.cos(rad(t))];
+  const ht = t + (pose.ht || 0);
+  const head = [neck[0] + 9 * Math.sin(rad(ht)), neck[1] - 9 * Math.cos(rad(ht))];
+  const pel = pose.pel || [[0, 0], [0, 0]];
+  const leg = (q = [0, 0, 0], off) => {
+    const k = limb(off, q[0], SEG.thigh), a = limb(k, q[1], SEG.shin), f = q[2] || 0;
+    return [off, k, a, [a[0] + SEG.foot * Math.cos(rad(f)), a[1] - SEG.foot * Math.sin(rad(f))]];
+  };
+  const arm = (q = [0, 0]) => { const e = limb(neck, q[0], SEG.upper); return [neck, e, limb(e, q[1], SEG.fore)]; };
+  const P = { A: leg(pose.la, pel[0]), B: leg(pose.lb, pel[1]), a: arm(pose.aa), b: arm(pose.ab) };
+  const pts = [[0, 0], neck, ...P.A, ...P.B, ...P.a, ...P.b];
+  const maxY = Math.max(head[1] + SEG.head, ...pts.map(p => p[1]));
+  const xs = [head[0] - SEG.head, head[0] + SEG.head, ...pts.map(p => p[0])];
+  const dx = 60 - (Math.min(...xs) + Math.max(...xs)) / 2 + (pose.dx || 0);
+  const dy = FLOOR - (pose.lift || 0) - maxY;
+  const minY = Math.min(head[1] - SEG.head, ...pts.map(p => p[1])) + dy;
+  // 跳んだ姿勢や腕を上げた姿勢は、床を基準に縮めて枠に収める
+  const scale = Math.min(1, (FLOOR - 3) / (FLOOR - minY), 112 / (Math.max(...xs) - Math.min(...xs)));
+  const m = p => [p[0] + dx, p[1] + dy];
+  const hip = m([0, 0]), nk = m(neck), hd = m(head);
+  for (const k in P) P[k] = P[k].map(m);
+
+  const hl = pose.hl || [];
+  const line = (ps, key, far) => `<polyline points="${ps.map(p => p.map(v => v.toFixed(1)).join(",")).join(" ")}" stroke="${hl.includes(key) ? "var(--accent)" : far ? "var(--muted)" : "var(--fg)"}"${far ? ' opacity=".75"' : ""}/>`;
+  let back = "", front = "";
+  for (const pr of pose.props || []) {
+    if (pr.box) {
+      let cx, top;
+      if (pr.box === "hip") { cx = hip[0]; top = hip[1] + 3; }
+      else { const L = P[pr.box]; cx = (L[2][0] + L[3][0]) / 2; top = Math.max(L[2][1], L[3][1]) + 1.5; }
+      const w = pr.w || 22;
+      back += `<rect x="${(cx - w / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${w}" height="${Math.max(0, FLOOR - top).toFixed(1)}" rx="1.5" fill="var(--line)"/>`;
+    }
+    if (pr.boxRel) {
+      const [rx, h, w = 22] = pr.boxRel;
+      back += `<rect x="${(hip[0] + rx - w / 2).toFixed(1)}" y="${FLOOR - h}" width="${w}" height="${h}" rx="1.5" fill="var(--line)"/>`;
+    }
+    if (pr.wall) {
+      const x = (P[pr.wall][2][0] + 2.5).toFixed(1);
+      back += `<line x1="${x}" y1="${FLOOR}" x2="${x}" y2="${FLOOR - 76}" stroke="var(--line)" stroke-width="3"/>`;
+    }
+    if (pr.anchor) {
+      const a = P[pr.anchor][2];
+      front += `<rect x="${(a[0] - 12).toFixed(1)}" y="${(a[1] - 13).toFixed(1)}" width="16" height="9" rx="2" fill="var(--line)"/>`;
+    }
+    if (pr.towel) {
+      const L = P[pr.towel], x0 = L[2][0] - 5, y = FLOOR - 1;
+      back += `<path d="M${x0.toFixed(1)} ${y} q3 -3 6 0 t6 0 t6 0" stroke="var(--water)" stroke-width="2" fill="none"/>`;
+    }
+    if (pr.map) {
+      const h = P[pr.map][2];
+      front += `<rect x="${(h[0] - 5).toFixed(1)}" y="${(h[1] - 7).toFixed(1)}" width="11" height="9" rx="1" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.2"/>`
+        + `<circle cx="${(h[0] + .5).toFixed(1)}" cy="${(h[1] - 2.5).toFixed(1)}" r="2" fill="none" stroke="var(--accent)" stroke-width=".9"/>`;
+    }
+  }
+  const fit = scale < 1 ? ` transform="translate(60 ${FLOOR}) scale(${scale.toFixed(3)}) translate(-60 -${FLOOR})"` : "";
+  return `<svg class="fig" viewBox="0 0 120 92" aria-hidden="true"><line x1="4" y1="${FLOOR + 1.5}" x2="116" y2="${FLOOR + 1.5}" stroke="var(--muted)" stroke-width="1" opacity=".6"/><g${fit}>${back}`
+    + `<g fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">`
+    + line(P.B, "B", true) + line(P.b, "b", true)
+    + (pose.pel ? line([P.A[0], P.B[0]], "t") : "")
+    + line([hip, nk], "t") + line(P.A, "A") + line(P.a, "a")
+    + `</g><circle cx="${hd[0].toFixed(1)}" cy="${hd[1].toFixed(1)}" r="${SEG.head}" fill="var(--surface)" stroke="${hl.includes("t") ? "var(--accent)" : "var(--fg)"}" stroke-width="2.6"/>${front}</g></svg>`;
+}
+
+const EX_GROUPS = {
+  P: { name: "O-プレハブ", note: "ランの前のアップとして10分。捻挫・アキレス腱・すねの予防（スウェーデン代表の予防プログラムがもと）。2週ごとにLvを上げる。" },
+  A: { name: "補強A（登り）", note: "急登に強い脚と、下りに耐える脚。ジャンプは疲れる前の最初に。上から順に1周し、2〜3分休んで次の周。" },
+  B: { name: "補強B（腸脛靭帯・足首）", note: "お尻の横と足首の外側。腸脛靭帯の再発予防と捻挫予防の中心。" },
+  C: { name: "補強C（体幹）", note: "急登で上半身がぶれない、走りながら地図を読める体幹。" },
+  R: { name: "走る練習の中で", note: "登り練習の日に取り入れる動き。" },
+};
+
+// 並び順＝説明文との照合の優先順（具体的な名前を先に）
+const EXERCISES = [
+  { id: "map_balance", g: "P", name: "片脚立ちで地図を読む", keys: ["地図を読む"],
+    aim: "レース中の読図姿勢のままバランスを取る（Lv3）",
+    steps: ["片脚で立ち、地図を胸の前に持つ", "コントロール間のルートを1本、指でたどる", "30秒保つ。左右とも"],
+    cues: ["足元ではなく地図を見る", "立っている脚の膝は軽くゆるめる"],
+    frames: [{ la: [0, 0, 0], lb: [15, -70, 0], aa: [55, 115], ab: [45, 105], t: 5, ht: 30, hl: ["A"], props: [{ map: "a" }] }] },
+  { id: "ankle_walks", g: "B", name: "足首の4方向歩き・外側への体重移動", keys: ["4方向歩き", "足裏の外側"],
+    aim: "足首まわりの小さな筋肉。捻挫の予防",
+    steps: ["つま先立ちで10m歩く → かかとで10m歩く", "足の外側で10m → 足の内側で10m", "片脚立ちで、足裏の外側にゆっくり体重を移して戻す（15回）"],
+    cues: ["小さな歩幅で、ゆっくり", "足首を固めすぎない"],
+    labels: ["つま先歩き", "かかと歩き"],
+    frames: [{ la: [12, 8, -55], lb: [-10, -12, -55], aa: [-25, 20], ab: [25, 80], hl: ["A", "B"] },
+             { la: [12, 12, 35], lb: [-10, -10, 35], t: -3, aa: [25, 80], ab: [-25, 20], hl: ["A", "B"] }] },
+  { id: "bent_knee_calf", g: "A", name: "膝を曲げたカーフレイズ", keys: ["膝を曲げたカーフレイズ", "膝曲げカーフレイズ"],
+    aim: "ふくらはぎの奥（ヒラメ筋）。アキレス腱・すねの痛みの予防",
+    steps: ["膝を軽く曲げて立つ（壁に手をついてOK）", "膝の角度を保ったまま、かかとを上げる", "2〜3秒かけてゆっくり下ろす"],
+    cues: ["膝を伸ばさない", "親指側に体重をのせる"],
+    frames: [{ la: [30, -25, 0], lb: [25, -30, 0], t: 10, aa: [60, 80], ab: [50, 75], props: [{ wall: "a" }] },
+             { la: [30, -25, -50], lb: [25, -30, -50], t: 10, aa: [60, 80], ab: [50, 75], hl: ["A"], props: [{ wall: "a" }] }] },
+  { id: "calf_raise", g: "P", name: "片脚カーフレイズ", keys: ["片脚カーフレイズ", "カーフレイズ"],
+    aim: "ふくらはぎ・アキレス腱。登りでつま先で地面を押す力",
+    steps: ["壁に軽く手をつき、片脚で立つ（Lv2からは段差の端で）", "かかとをできるだけ高く上げる", "2〜3秒かけて下ろす。段差ならかかとを段より下まで"],
+    cues: ["膝は伸ばしたまま", "足の親指側に体重"],
+    frames: [{ la: [0, 0, 0], lb: [10, -75, 0], aa: [60, 80], ab: [50, 80], props: [{ wall: "a" }] },
+             { la: [0, 0, -55], lb: [10, -75, 0], aa: [55, 75], ab: [45, 75], hl: ["A"], props: [{ wall: "a" }] }] },
+  { id: "runners_pose", g: "P", name: "ランナーズポーズ", keys: ["ランナーズポーズ"],
+    aim: "走る姿勢のままの片脚バランス",
+    steps: ["片脚で立ち、反対の膝を腰の高さまで上げる", "腕は走るときの形（前後に振った位置）で止める", "30秒保つ。Lv2は目を閉じる"],
+    cues: ["骨盤を水平に保つ", "立っている脚の膝は軽くゆるめる"],
+    frames: [{ la: [0, 0, 0], lb: [85, 5, 0], aa: [-35, 40], ab: [35, 110], hl: ["A"] }] },
+  { id: "single_leg_stand", g: "P", name: "片脚立ち", keys: ["片脚立ち"],
+    aim: "足首のセンサー（バランス感覚）を鍛える",
+    steps: ["片脚で立ち、反対の足を浮かせる", "30秒保つ", "Lv2は芝やクッションの上で"],
+    cues: ["足の指で地面をつかむ", "目線は前"],
+    frames: [{ la: [0, 0, 0], lb: [15, -70, 0], aa: [25, 30], ab: [-25, -20], hl: ["A"] }] },
+  { id: "star", g: "P", name: "片脚スター", keys: ["片脚スター"],
+    aim: "片脚で体を支えながら、いろいろな方向に動く力",
+    steps: ["片脚で立ち、膝を軽く曲げる", "反対の足先で、前・横・後ろの床に順にタッチ", "各方向3回。左右とも"],
+    cues: ["タッチは軽く。体重は立っている脚に", "膝が内側に入らないように"],
+    labels: ["前にタッチ", "後ろにタッチ"],
+    frames: [{ la: [15, -10, 0], lb: [40, 40, 0], t: -5, aa: [-20, -10], ab: [20, 10], hl: ["A"] },
+             { la: [10, -15, 0], lb: [-35, -35, 0], t: 12, aa: [20, 30], ab: [-10, 0], hl: ["A"] }] },
+  { id: "hop_slope", g: "A", name: "斜面での切り返しホップ", keys: ["切り返しホップ"],
+    aim: "不整地で左右に切り返す足首と脚（2月後半）",
+    steps: ["ゆるい斜面で、左右にジグザグに片脚ホップ", "着地ごとに止まらず次へ", "8回。左右とも"],
+    cues: ["足首を固めすぎない", "目線は前"],
+    frames: [{ la: [35, -20, 0], lb: [30, -60, 0], t: 20, aa: [-30, -10], ab: [30, 60], hl: ["A"] },
+             { la: [5, -5, -30], lb: [25, -60, 0], t: 5, aa: [30, 60], ab: [-25, -5], lift: 10, hl: ["A"] }] },
+  { id: "hops", g: "P", name: "ホップ（前後・左右）", keys: ["両脚ホップ", "片脚ホップ"],
+    aim: "着地の衝撃を受け止める足首とふくらはぎ",
+    steps: ["小さく速く、前後に10回跳ぶ → 左右に10回", "Lv2は片脚で", "Lv3は前→右→後ろ→左を連続で3周"],
+    cues: ["静かに着地する（音を小さく）", "膝はつま先と同じ向き"],
+    frames: [{ la: [35, -20, 0], lb: [30, -25, 0], t: 20, aa: [-30, -10], ab: [-25, -5] },
+             { la: [5, -5, -30], lb: [0, -8, -30], t: 5, aa: [30, 60], ab: [25, 55], lift: 10, hl: ["A", "B"] }] },
+  { id: "hop_stick", g: "P", name: "片脚ジャンプ → 着地で止まる", keys: ["片脚ジャンプ", "片脚着地"],
+    aim: "片脚で着地を止める力。捻挫の予防（Lv3）",
+    steps: ["片脚で前に小さく跳ぶ", "同じ脚で着地し、膝を曲げて2秒止まる", "慣れたら芝や林の斜面など不整地で"],
+    cues: ["膝とつま先の向きをそろえる", "ぐらついたら距離を短く"],
+    labels: ["跳ぶ", "止まる"],
+    frames: [{ la: [15, -10, -20], lb: [40, -50, 0], t: 10, aa: [-30, 20], ab: [40, 90], lift: 12 },
+             { la: [40, -15, 0], lb: [25, -75, 0], t: 25, aa: [60, 80], ab: [-10, 20], hl: ["A"] }] },
+
+  { id: "squat_jump", g: "A", name: "スクワットジャンプ", keys: ["スクワットジャンプ"],
+    aim: "一気に登る瞬発力",
+    steps: ["足を肩幅に開き、腕を後ろに引いてしゃがむ", "腕を振り上げて真上に跳ぶ", "膝を曲げて静かに着地し、すぐ次へ"],
+    cues: ["膝はつま先と同じ向き", "着地の音を小さく"],
+    frames: [{ t: 40, la: [75, -20, 0], lb: [70, -25, 0], aa: [-40, -20], ab: [-35, -15] },
+             { t: 0, la: [0, 0, -40], lb: [-3, -3, -40], aa: [170, 175], ab: [165, 170], lift: 12, hl: ["A", "B"] }] },
+  { id: "split_jump", g: "A", name: "スプリットジャンプ", keys: ["スプリットジャンプ"],
+    aim: "片脚ずつの瞬発力（1月から）",
+    steps: ["前後に脚を開いて腰を落とす", "真上に跳び、空中で脚を入れ替える", "反対の脚が前で着地し、すぐ次へ"],
+    cues: ["上体はまっすぐ", "前の膝が内側に入らない"],
+    frames: [{ t: 5, la: [65, -5, 0], lb: [-20, -100, 0], aa: [-30, 20], ab: [30, 90] },
+             { t: 5, la: [-25, -95, 0], lb: [60, -5, 0], aa: [30, 90], ab: [-30, 20], lift: 8, hl: ["A", "B"] }] },
+  { id: "bulgarian", g: "A", name: "ブルガリアンスクワット", keys: ["ブルガリアン"],
+    aim: "もも前とお尻。登りの一歩と、下りのブレーキ",
+    steps: ["後ろ足の甲をベンチに乗せ、前足は大きく前へ", "3秒かけて腰を真下に下ろす（前の太ももが床と平行近くまで）", "前足のかかとで押して立つ"],
+    cues: ["体重は前脚に8割", "膝が内側に入らない", "段階2は5秒で下ろし、底で1秒止める"],
+    frames: [{ t: 8, la: [15, -8, 0], lb: [-15, -100, 180], aa: [15, 80], ab: [10, 75], props: [{ box: "B" }] },
+             { t: 15, la: [75, -10, 0], lb: [-5, -150, 180], aa: [15, 80], ab: [10, 75], hl: ["A"], props: [{ box: "B" }] }] },
+  { id: "stepup_knee", g: "A", name: "ステップアップ＋膝上げ", keys: ["ステップアップ"],
+    aim: "急登の一歩そのもの。上の脚だけで体を押し上げる",
+    steps: ["膝より少し高い台に片足を乗せる", "上の脚だけで押して立ち、反対の膝を胸まで引き上げる", "3秒かけて降りる"],
+    cues: ["下の脚で床を蹴らない", "上体は少し前傾（急登の姿勢）"],
+    frames: [{ t: 15, la: [75, -5, 0], lb: [-15, -15, 0], aa: [-30, 0], ab: [30, 70], props: [{ box: "A" }] },
+             { t: 10, la: [0, 0, 0], lb: [95, 10, 0], aa: [30, 80], ab: [-35, -10], lift: 13.5, hl: ["A"], props: [{ box: "A" }] }] },
+  { id: "sl_hip_lift", g: "A", name: "片脚ヒップリフト", keys: ["片脚ヒップリフト"],
+    aim: "お尻で体を押し上げる力（登りのエンジン）",
+    steps: ["あおむけで片足を台に乗せ、反対の脚は天井に向ける", "かかとで台を押してお尻を持ち上げ、肩から膝まで一直線に", "2秒止めて、ゆっくり下ろす"],
+    cues: ["腰を反らない。お尻で上げる"],
+    frames: [{ t: -90, la: [160, 25, 0], lb: [160, 160, 0], aa: [90, 90], ab: [90, 90], props: [{ box: "A" }] },
+             { t: -110, la: [110, 10, 0], lb: [160, 160, 0], aa: [60, 90], ab: [60, 90], hl: ["A"], props: [{ box: "A" }] }] },
+  { id: "box_pistol", g: "A", name: "ボックスピストル", keys: ["ボックスピストル"],
+    aim: "片脚で立ち上がる力（1月から）",
+    steps: ["ベンチの前に立ち、片脚を前に浮かせる", "片脚でゆっくりベンチに座る", "勢いをつけずに片脚で立つ"],
+    cues: ["難しければ高いベンチで", "膝が内側に入らない"],
+    frames: [{ t: 25, la: [80, -5, 0], lb: [80, 80, 0], aa: [80, 90], ab: [75, 85], props: [{ box: "hip" }] },
+             { t: 5, la: [0, 0, 0], lb: [75, 80, 0], aa: [85, 90], ab: [80, 90], hl: ["A"], props: [{ boxRel: [-14, 21] }] }] },
+  { id: "nordic", g: "A", name: "ノルディックハムストリング", keys: ["ノルディック"],
+    aim: "もも裏。下りで脚にブレーキをかける力（1月から）",
+    steps: ["膝立ちになり、ソファの下などに足首を引っ掛ける", "膝から頭まで一直線のまま、できるだけゆっくり前に倒れる", "耐えられなくなったら手をついて受け止め、手で押して戻る"],
+    cues: ["腰を曲げない", "最初は5回で十分（筋肉痛が強く出やすい）"],
+    frames: [{ t: 0, la: [0, -90, 180], lb: [0, -90, 180], aa: [0, 0], ab: [0, 0], props: [{ anchor: "A" }] },
+             { t: 45, la: [-45, -90, 180], lb: [-45, -90, 180], aa: [70, 90], ab: [65, 85], hl: ["A"], props: [{ anchor: "A" }] }] },
+  { id: "lunge_walk", g: "A", name: "連続ランジ（階段・坂）", keys: ["ランジ"],
+    aim: "大きな一歩で登る力（1月から）",
+    steps: ["大きく一歩踏み出し、後ろの膝が床につく手前まで沈む", "前足で押して立ち、後ろ脚を前に出して次の一歩", "階段や坂を登りながら10歩"],
+    cues: ["上体はまっすぐ", "前の膝が内側に入らない"],
+    frames: [{ t: 5, la: [70, -5, 0], lb: [-20, -100, 0], aa: [-30, 20], ab: [30, 90], hl: ["A"] },
+             { t: 10, la: [5, -5, 0], lb: [85, 0, 0], aa: [30, 90], ab: [-30, 10] }] },
+  { id: "bounding", g: "A", name: "バウンディング", keys: ["バウンディング"],
+    aim: "弾む力。登りで一気に進む（2月後半）",
+    steps: ["大きく弾むように走る。1歩ごとに空中で長く浮く", "前の膝を高く、腕を大きく振る", "30mを3本。坂や階段で"],
+    cues: ["着地は足の真下近く", "疲れて弾めなくなったら終わり"],
+    frames: [{ t: 10, la: [60, 0, 0], lb: [-45, -70, 0], aa: [-45, 0], ab: [60, 120], lift: 14, hl: ["A"] },
+             { t: 10, la: [20, -10, 0], lb: [-25, -85, 0], aa: [40, 100], ab: [-40, -10] }] },
+  { id: "drop_land", g: "A", name: "段差からの下り着地", keys: ["下り着地"],
+    aim: "下りの衝撃を受け止める力（2月後半）",
+    steps: ["20〜30cmの段差に立つ", "一歩踏み出して降り、両脚（慣れたら片脚）で着地", "膝を曲げて衝撃を吸収し、2秒止まる"],
+    cues: ["膝が内側に入らない", "着地の音を小さく"],
+    frames: [{ t: 0, la: [0, 0, 0], lb: [25, 10, 0], aa: [20, 40], ab: [-10, 0], lift: 18, props: [{ box: "A", w: 26 }] },
+             { t: 30, la: [60, -25, 0], lb: [55, -30, 0], aa: [60, 90], ab: [55, 85], hl: ["A", "B"], props: [{ boxRel: [-30, 18, 26] }] }] },
+  { id: "step_down", g: "A", name: "ステップダウン", keys: ["ステップダウン"],
+    aim: "下りで膝を曲げながら耐える力",
+    steps: ["段差に片脚で立つ", "3秒かけて膝を曲げ、反対のかかとを床に軽くつける", "立っている脚で押し戻す"],
+    cues: ["膝はつま先の向き", "上体を少し前に倒してバランスを取る"],
+    frames: [{ t: 5, la: [0, 0, 0], lb: [25, 15, 0], aa: [60, 80], ab: [50, 70], lift: 14, props: [{ box: "A" }] },
+             { t: 25, la: [70, -35, 0], lb: [30, 30, -20], aa: [70, 90], ab: [60, 85], hl: ["A"], props: [{ box: "A" }] }] },
+
+  { id: "side_leg_raise", g: "B", name: "横向き脚上げ", keys: ["横向き脚上げ"],
+    aim: "お尻の横（中殿筋）。腸脛靭帯の予防の中心",
+    steps: ["横向きに寝て、背中側を壁につける", "上の脚を伸ばしたまま、かかとで壁をなでるように上げる", "ゆっくり下ろす。20回"],
+    cues: ["脚が前に出るとお尻の横に効かない", "つま先は正面か、少し下向き"],
+    frames: [{ t: -90, la: [90, 90, 0], lb: [90, 90, 0], aa: [90, 90], ab: [-150, -150] },
+             { t: -90, la: [125, 125, 0], lb: [90, 90, 0], aa: [90, 90], ab: [-150, -150], hl: ["A"] }] },
+  { id: "hip_hike", g: "B", name: "ヒップハイク", keys: ["ヒップハイク"],
+    aim: "お尻の横で骨盤を支える力。腸脛靭帯の予防",
+    steps: ["段差の端に片脚で立ち、反対の脚を段の外にぶら下げる", "両膝を伸ばしたまま、ぶら下げた側の骨盤を下げる", "立っている脚のお尻の横で骨盤を引き上げる"],
+    cues: ["上体を傾けない。骨盤だけを動かす"],
+    labels: ["骨盤を下げる", "引き上げる"],
+    frames: [{ pel: [[-4, -2], [4, 3]], la: [0, 0, 0], lb: [0, 0, 180], aa: [10, 10], ab: [-10, -10], lift: 6, props: [{ box: "A" }] },
+             { pel: [[-4, 2], [4, -3]], la: [0, 0, 0], lb: [0, 0, 180], aa: [10, 10], ab: [-10, -10], lift: 11, hl: ["A", "t"], props: [{ box: "A" }] }] },
+  { id: "skater_squat", g: "B", name: "スケータースクワット", keys: ["スケータースクワット"],
+    aim: "片脚でしゃがむときに膝がぶれない力",
+    steps: ["片脚で立ち、反対の脚を後ろに浮かせる", "上体を前に倒しながら片脚でしゃがみ、後ろの膝を床に近づける", "片脚で立ち上がる"],
+    cues: ["膝が内側に入らない", "腕は前に伸ばしてバランスを取る"],
+    frames: [{ t: 5, la: [0, 0, 0], lb: [5, -85, 0], aa: [20, 30], ab: [-10, 0] },
+             { t: 40, la: [65, -20, 0], lb: [-15, -80, 0], aa: [80, 90], ab: [75, 85], hl: ["A"] }] },
+  { id: "towel", g: "B", name: "タオルギャザー", keys: ["タオルギャザー"],
+    aim: "足裏のアーチを支える力",
+    steps: ["椅子に座り、床に広げたタオルに足を乗せる", "足の指でタオルをたぐり寄せる", "1分。左右とも"],
+    cues: ["かかとは床につけたまま"],
+    frames: [{ t: 5, la: [85, 0, 0], lb: [80, -5, 0], aa: [30, 80], ab: [25, 75], props: [{ box: "hip" }, { towel: "A" }] },
+             { t: 5, la: [85, 0, -15], lb: [80, -5, 0], aa: [30, 80], ab: [25, 75], hl: ["A"], props: [{ box: "hip" }, { towel: "A" }] }] },
+
+  { id: "side_plank", g: "C", name: "サイドプランク＋脚上げ", keys: ["サイドプランク"],
+    aim: "体の横の安定。お尻の横にも効く",
+    steps: ["横向きで、ひじと足の外側で体を支える", "頭からかかとまで一直線にし、上の脚を上げて保つ", "30秒。左右とも"],
+    cues: ["お尻が落ちないように"],
+    frames: [{ t: 78, la: [-78, -78, 0], lb: [-78, -78, 0], aa: [0, 90], ab: [170, 170] },
+             { t: 78, la: [-110, -110, 0], lb: [-78, -78, 0], aa: [0, 90], ab: [170, 170], hl: ["A", "t"] }] },
+  { id: "map_plank", g: "C", name: "地図持ちプランク", keys: ["地図持ちプランク", "プランク"],
+    aim: "地図を持った姿勢のまま胴体を固める",
+    steps: ["ひじとつま先で体を支え、頭からかかとまで一直線にする", "片手を前に伸ばす（地図を持つように）。20秒", "手を替えて反対も"],
+    cues: ["お尻を上げすぎない・下げすぎない", "腰がねじれないように"],
+    frames: [{ t: 90, la: [-80, -80, -90], lb: [-80, -80, -90], aa: [0, 90], ab: [0, 90] },
+             { t: 90, la: [-80, -80, -90], lb: [-80, -80, -90], aa: [90, 90], ab: [0, 90], hl: ["t"], props: [{ map: "a" }] }] },
+  { id: "dead_bug", g: "C", name: "デッドバグ", keys: ["デッドバグ"],
+    aim: "手足が動いても胴体がぶれない力",
+    steps: ["あおむけで腕を天井へ、膝と股関節を90度に曲げる", "片腕と反対の脚を、床すれすれまで伸ばす", "戻して反対側。交互に10回"],
+    cues: ["腰を床に押しつけたまま"],
+    frames: [{ t: -90, la: [180, 90, 90], lb: [178, 92, 90], aa: [180, 180], ab: [178, 178] },
+             { t: -90, la: [180, 90, 90], lb: [100, 100, 0], aa: [-95, -95], ab: [178, 178], hl: ["B", "a", "t"] }] },
+  { id: "bird_dog", g: "C", name: "バードドッグ", keys: ["バードドッグ"],
+    aim: "背中とお尻。腰をねじらずに手足を動かす",
+    steps: ["四つ這いになる", "片手を前、反対の脚を後ろにまっすぐ伸ばして2秒", "戻して反対側。交互に10回"],
+    cues: ["背中を水平に", "腰をねじらない"],
+    frames: [{ t: 80, la: [0, -90, 180], lb: [0, -90, 180], aa: [0, 0], ab: [0, 0] },
+             { t: 80, la: [0, -90, 180], lb: [-95, -95, 180], aa: [100, 100], ab: [0, 0], hl: ["B", "a", "t"] }] },
+  { id: "mountain_climber", g: "C", name: "マウンテンクライマー", keys: ["マウンテンクライマー"],
+    aim: "登りで脚を引き上げる動き＋体幹",
+    steps: ["腕立ての姿勢になる", "片膝を胸に引きつけて戻す", "左右交互。段階1はゆっくり、段階2は速く"],
+    cues: ["お尻を上げすぎない"],
+    frames: [{ t: 75, la: [-75, -75, -90], lb: [-75, -75, -90], aa: [-10, -10], ab: [-10, -10] },
+             { t: 75, la: [70, -70, 0], lb: [-75, -75, -90], aa: [-10, -10], ab: [-10, -10], hl: ["A"] }] },
+  { id: "hollow", g: "C", name: "ホロウボディ", keys: ["ホロウボディ"],
+    aim: "体幹全体を固める",
+    steps: ["あおむけで、腰を床に押しつける", "腕を頭の上に伸ばし、手足と肩を床から少し浮かせる", "20秒保つ"],
+    cues: ["きつければ膝を曲げる", "腰が浮いたら休む"],
+    frames: [{ t: -80, la: [98, 98, 0], lb: [98, 98, 0], aa: [-100, -100], ab: [-102, -102], hl: ["t"] }] },
+
+  { id: "power_walk", g: "R", name: "パワーウォーク", keys: ["パワーウォーク"],
+    aim: "急登では走るより速いことがある歩き方",
+    steps: ["急な登りで、前傾して大股で歩く", "前の脚の膝の上に手を当てる", "手で膝を押しながら脚を伸ばし、体を持ち上げる"],
+    cues: ["腕と脚で同時に押す", "勝浦の急登で試す"],
+    frames: [{ t: 40, la: [60, -5, 0], lb: [-25, -45, 0], aa: [35, 10], ab: [-20, 30], hl: ["A", "a"] }] },
+];
+
+function exCard(ex) {
+  const labels = ex.labels || ["はじめ", "おわり"];
+  const frames = ex.frames.length === 1
+    ? `<div class="frames one"><div class="frame">${figure(ex.frames[0])}</div></div>`
+    : `<div class="frames"><div class="frame">${figure(ex.frames[0])}<span>${labels[0]}</span></div><span class="arrow">→</span><div class="frame">${figure(ex.frames[1])}<span>${labels[1]}</span></div></div>`;
+  return `<article class="ex" id="ex-${ex.id}"><h4>${ex.name}</h4>${frames}<p class="aim">${ex.aim}</p>`
+    + `<ol>${ex.steps.map(s => `<li>${s}</li>`).join("")}</ol><ul>${ex.cues.map(s => `<li>${s}</li>`).join("")}</ul></article>`;
+}
+
+function matchExercises(text) {
+  const found = [];
+  for (const line of (text || "").split("\n")) {
+    const ex = EXERCISES.find(e => e.keys.some(k => line.includes(k)));
+    if (ex && !found.includes(ex)) found.push(ex);
+  }
+  return found;
+}
+
+function renderHow(text) {
+  const exs = matchExercises(text);
+  $("edHow").hidden = !exs.length;
+  $("edHow").innerHTML = exs.length ? `<h4>やり方（${exs.length}種目）</h4>` + exs.map(exCard).join("") : "";
+}
+
+// 一覧は練習で行う順に並べる
+const LIB_ORDER = ["calf_raise", "runners_pose", "single_leg_stand", "star", "hops", "hop_stick", "map_balance",
+  "squat_jump", "bulgarian", "stepup_knee", "sl_hip_lift", "bent_knee_calf", "split_jump", "box_pistol", "nordic",
+  "lunge_walk", "bounding", "drop_land", "step_down", "hop_slope",
+  "side_leg_raise", "hip_hike", "skater_squat", "ankle_walks", "towel",
+  "map_plank", "side_plank", "dead_bug", "bird_dog", "mountain_climber", "hollow", "power_walk"];
+
+let exBuilt = false;
+function buildLibrary() {
+  if (exBuilt) return;
+  exBuilt = true;
+  const sorted = [...EXERCISES].sort((a, b) => LIB_ORDER.indexOf(a.id) - LIB_ORDER.indexOf(b.id));
+  $("exNav").innerHTML = Object.entries(EX_GROUPS).map(([g, v]) => `<a href="#ex-menu-${g}">${v.name}</a>`).join("");
+  $("exLib").innerHTML = Object.entries(EX_GROUPS).map(([g, v]) =>
+    `<section class="exgroup" id="ex-menu-${g}"><h3>${v.name}</h3><p>${v.note}</p>`
+    + sorted.filter(e => e.g === g).map(exCard).join("") + "</section>").join("");
+}
+
+function openExFromHash() {
+  if (!location.hash.startsWith("#ex")) return;
+  setTab("ex");
+  document.getElementById(location.hash.slice(1))?.scrollIntoView();
+}
+window.addEventListener("hashchange", openExFromHash);
+
 /* ---------- 共通 ---------- */
 
 let planLoaded = false;
 function setTab(tab, load = true) {
   $("tab-memo").setAttribute("aria-selected", String(tab === "memo"));
   $("tab-plan").setAttribute("aria-selected", String(tab === "plan"));
+  $("tab-ex").setAttribute("aria-selected", String(tab === "ex"));
   $("memoView").hidden = tab !== "memo";
   $("memoBar").hidden = tab !== "memo";
   $("planView").hidden = tab !== "plan";
+  $("exView").hidden = tab !== "ex";
+  if (tab === "ex") buildLibrary();
   showStatus("", "");
   try { localStorage.setItem("tab", tab); } catch {}
   if (load && tab === "plan" && !planLoaded && cfg.aid && cfg.key) { planLoaded = true; loadMonth(); }
 }
 $("tab-memo").addEventListener("click", () => setTab("memo"));
 $("tab-plan").addEventListener("click", () => setTab("plan"));
+$("tab-ex").addEventListener("click", () => setTab("ex"));
 
 function start() {
   if (!cfg.aid || !cfg.key) {
@@ -685,6 +1062,7 @@ try { savedTab = localStorage.getItem("tab") || "memo"; } catch {}
 setTab(savedTab, false);
 render();
 start();
+openExFromHash();
 </script>
 </body>
 </html>
