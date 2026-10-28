@@ -158,6 +158,8 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 .dayhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .dlabel { font-weight: 700; }
 .dlabel .wd { color: var(--muted); font-weight: 400; margin-left: 2px; }
+.today-card { border: 2px solid var(--accent); }
+.today-card .dlabel { font-size: 1.05rem; }
 .add { font: inherit; font-size: .8rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
 .ev {
   display: grid; grid-template-columns: 4px 1fr auto; gap: 0 10px; align-items: center; width: 100%; text-align: left;
@@ -269,7 +271,7 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 
   <div id="memoView" class="view">
     <section>
-      <h2>どの練習？<small>直近7日</small></h2>
+      <h2>どの練習？<small>直近3日</small></h2>
       <div id="acts" class="acts"><div class="hint">読み込み中…</div></div>
     </section>
 
@@ -298,6 +300,8 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
   </div>
 
   <div id="planView" class="view" hidden>
+    <section id="todayCard" class="day today-card"><div class="hint">読み込み中…</div></section>
+    <button id="toToday" class="ghost" type="button">今日に戻る</button>
     <div class="weeknav">
       <button id="prevMonth" class="ghost" type="button" aria-label="前の月">←</button>
       <div id="monthLabel" class="label">-</div>
@@ -315,7 +319,6 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
     </div>
     <section id="dayDetail" class="day" hidden></section>
     <div id="weekTotal" class="weektotal"></div>
-    <button id="toToday" class="ghost" type="button">今日に戻る</button>
   </div>
 
   <div id="exView" class="view" hidden>
@@ -513,7 +516,7 @@ function render() {
 function renderActs() {
   const box = $("acts");
   box.innerHTML = "";
-  if (!acts.length) { box.innerHTML = '<div class="hint">直近7日の記録がありません。COROSから同期されるまで少し待ってください。</div>'; return; }
+  if (!acts.length) { box.innerHTML = '<div class="hint">直近3日の記録がありません。COROSから同期されるまで少し待ってください。</div>'; return; }
   for (const a of acts) {
     const done = isDone(a);
     const d = new Date(a.start_date_local);
@@ -542,7 +545,7 @@ function select(a) {
 async function loadActs() {
   try {
     const today = new Date();
-    const list = await api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?oldest=${ymd(addDays(today, -6))}&newest=${ymd(today)}`);
+    const list = await api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?oldest=${ymd(addDays(today, -2))}&newest=${ymd(today)}`);
     // 1分未満の細切れ記録（大会のアップ等）は除く
     acts = list.filter(a => (a.moving_time || 0) >= 60).sort((x, y) => y.start_date_local.localeCompare(x.start_date_local));
     if (acts.length) select(acts.find(a => !isDone(a)) || acts[0]); else renderActs();
@@ -586,10 +589,16 @@ async function loadMonth() {
   $("monthLabel").innerHTML = `${monthStart.getFullYear()}年${monthStart.getMonth() + 1}月<small>インカレまで ${Math.max(0, Math.ceil((RACE - new Date()) / 86400000))} 日</small>`;
   try {
     const q = `oldest=${ymd(gridStart)}&newest=${ymd(gridEnd)}`;
-    [monthEvents, monthActs] = await Promise.all([
+    const t = ymd(new Date()), qt = `oldest=${t}&newest=${t}`;
+    // 今日のカードは、表示中の月に関係なく今日の分を取る
+    const [evs, acts, tEvs, tActs] = await Promise.all([
       api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/events?${q}`),
       api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?${q}`),
+      api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/events?${qt}`),
+      api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?${qt}`),
     ]);
+    monthEvents = evs; monthActs = acts;
+    renderDayInto($("todayCard"), t, tEvs, tActs, "今日のトレーニング ");
     renderMonth(gridStart, gridEnd);
     renderDay();
   } catch (e) {
@@ -626,16 +635,14 @@ function renderMonth(gridStart, gridEnd) {
   }
 }
 
-function renderDay() {
-  const d = new Date(`${selDate}T00:00:00`);
-  const evs = onDay(monthEvents, selDate);
-  const acts = onDay(monthActs, selDate);
+// 1日分の予定と実績を el に描く。今日のカードとカレンダーで選んだ日の詳細の両方で使う
+function renderDayInto(el, key, evs, acts, label) {
+  const d = new Date(`${key}T00:00:00`);
   const todayKey = ymd(new Date());
-  const el = $("dayDetail");
   el.hidden = false;
-  el.innerHTML = `<div class="dayhead"><span class="dlabel">${d.getMonth() + 1}/${d.getDate()}<span class="wd">（${WD[d.getDay()]}）</span></span>
+  el.innerHTML = `<div class="dayhead"><span class="dlabel">${label ? `${label}<span class="wd">` : ""}${d.getMonth() + 1}/${d.getDate()}${label ? "" : `<span class="wd">`}（${WD[d.getDay()]}）</span></span>
     <button class="add" type="button">＋追加</button></div>`;
-  el.querySelector(".add").addEventListener("click", () => openEditor(null, selDate));
+  el.querySelector(".add").addEventListener("click", () => openEditor(null, key));
   for (const e of evs) {
     const meta = [e.moving_time ? `${Math.round(e.moving_time / 60)}分` : "", e.distance ? `${(e.distance / 1000).toFixed(1)}km` : ""].filter(Boolean).join("・");
     const b = document.createElement("button");
@@ -648,11 +655,19 @@ function renderDay() {
   if (acts.length) {
     const rpes = acts.map(a => a.icu_rpe || parseNotes(a.description).rpe).filter(Boolean);
     el.insertAdjacentHTML("beforeend", `<div class="actual">実績 ${sumKm(acts).toFixed(1)}km・${Math.round(sumMin(acts))}分${rpes.length ? `・RPE${Math.max(...rpes)}` : ""}</div>`);
-  } else if (selDate < todayKey && evs.some(e => e.category === "WORKOUT")) {
+  } else if (key < todayKey && evs.some(e => e.category === "WORKOUT")) {
     el.insertAdjacentHTML("beforeend", '<div class="actual none">実績なし</div>');
   }
+}
+
+function renderDay() {
+  const todayKey = ymd(new Date());
+  // 今日は上の「今日のトレーニング」に出ているので、カレンダーの下には出さない
+  if (selDate === todayKey) $("dayDetail").hidden = true;
+  else renderDayInto($("dayDetail"), selDate, onDay(monthEvents, selDate), onDay(monthActs, selDate));
 
   // 選んだ日を含む週の合計
+  const d = new Date(`${selDate}T00:00:00`);
   const mon = monday(d);
   const keys = Array.from({ length: 7 }, (_, i) => ymd(addDays(mon, i)));
   const wEvs = monthEvents.filter(e => keys.includes(e.start_date_local.slice(0, 10)) && e.category === "WORKOUT");
@@ -1259,10 +1274,6 @@ function renderPlayer() {
 }
 
 function tickPlayer() {
-  if (pl.startedAt && pl.i < pl.steps.length) {
-    const el = Math.round((Date.now() - pl.startedAt) / 1000);
-    $("plMeta").textContent = `${pl.i + 1}/${pl.steps.length}・${fmtTime(el)}`;
-  }
   const t = $("plTimer");
   if (!t) return;
   if (pl.running) {
@@ -1339,6 +1350,7 @@ function start() {
     openSetup();
     $("acts").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
     $("cal").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
+    $("todayCard").innerHTML = '<div class="hint">最初に接続設定を入力してください（画面の一番下）。</div>';
     return;
   }
   loadActs();
