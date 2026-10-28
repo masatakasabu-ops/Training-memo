@@ -19,6 +19,7 @@
   --accent-fg: #ffffff;
   --forest: #3f7d3a;
   --contour: #9a5b2a;     /* 等高線の茶 */
+  --water: #2f78b7;       /* 地図の水系の青。補強に使う */
   --warn: #c0392b;
   --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-num: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
@@ -27,12 +28,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #141913; --surface: #1d241c; --fg: #e8ede4; --muted: #9aa697; --line: #2f392d;
-    --accent: #f08a35; --accent-fg: #1a1208; --forest: #7cbf74; --contour: #d29a63; --warn: #ef6b5b; color-scheme: dark;
+    --accent: #f08a35; --accent-fg: #1a1208; --forest: #7cbf74; --contour: #d29a63; --water: #6eb1e8; --warn: #ef6b5b; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #141913; --surface: #1d241c; --fg: #e8ede4; --muted: #9aa697; --line: #2f392d;
-  --accent: #f08a35; --accent-fg: #1a1208; --forest: #7cbf74; --contour: #d29a63; --warn: #ef6b5b; color-scheme: dark;
+  --accent: #f08a35; --accent-fg: #1a1208; --forest: #7cbf74; --contour: #d29a63; --water: #6eb1e8; --warn: #ef6b5b; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { padding-top: env(safe-area-inset-top, 0px); }
@@ -144,6 +145,8 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 }
 .lbl.cat-race { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 700; }
 .lbl.cat-note { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
+.lbl.cat-strength { background: color-mix(in srgb, var(--water) 20%, transparent); color: var(--water); }
+.ev.cat-strength::before { background: var(--water); }
 .more { font-size: .6rem; color: var(--muted); }
 .cell .done { margin-top: auto; }
 .done { font-family: var(--font-num); font-size: .6rem; color: var(--forest); }
@@ -247,6 +250,7 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
       <div id="cal" class="cal"><div class="hint">読み込み中…</div></div>
       <div class="legend">
         <span><i class="lbl cat-workout"></i>練習</span>
+        <span><i class="lbl cat-strength"></i>補強</span>
         <span><i class="lbl cat-race"></i>大会</span>
         <span><i class="lbl cat-note"></i>メモ・休養</span>
         <span class="done">✓ 実績あり</span>
@@ -308,7 +312,10 @@ const PATTERNS = { rpe: /RPE\s*[:：]\s*(\d+(?:\.\d+)?)/i, fatigue: /疲労\s*[:
 const STRIDES = "5x\n- 0.1km 3:20/km Pace\n- 0.1km 6:30/km Pace";
 const TEMPLATES = [
   { name: "ジョグ40分＋流し", cat: "WORKOUT", desc: `- 40m 5:30/km Pace\n\n${STRIDES}` },
-  { name: "ジョグ50分＋補強＋流し", cat: "WORKOUT", desc: `- 50m 5:30/km Pace\n\n${STRIDES}\n\n補強：ステップアップ10×2、片脚スクワット10×2、横向き脚上げ20×2、カーフレイズ15×2` },
+  { name: "ジョグ50分＋流し", cat: "WORKOUT", desc: `- 50m 5:30/km Pace\n\n${STRIDES}` },
+  { name: "補強A（脚力・登り）", cat: "WORKOUT", type: "WeightTraining", desc: "約20分。各2セット、左右とも。\n\n・ブルガリアンスクワット 片脚8〜10回（膝が内側に入らないように）\n・ステップアップ 片脚10回（膝の高さの台）\n・片脚ルーマニアンデッドリフト 10回\n・カーフレイズ 片脚15回" },
+  { name: "補強B（股関節・体幹）", cat: "WORKOUT", type: "WeightTraining", desc: "約15分。各2セット、左右とも。\n\n・横向き脚上げ 20回\n・クラムシェル 20回\n・サイドプランク 30〜40秒\n・デッドバグ 10回\n・片脚ヒップリフト 12回" },
+  { name: "補強C（足首・バランス・下り）", cat: "WORKOUT", type: "WeightTraining", desc: "約15分。各2セット、左右とも。\n\n・片脚立ち（目を閉じて） 30秒\n・ステップダウン 10回（3秒かけて降りる）\n・片脚ホップ 前後・左右 各10回\n・カーフレイズ 片脚15回" },
   { name: "200m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 0.2km 3:35/km Pace\n- 0.2km 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n200mは42〜44秒。" },
   { name: "400m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 0.4km 3:22/km Pace\n- 0.2km 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n400mは80〜82秒。" },
   { name: "閾値走 5分×4", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n4x\n- 5m 4:05/km Pace\n- 90s 6:00/km Pace\n\n- 10m 5:40/km Pace" },
@@ -323,7 +330,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const state = { rpe: null, fatigue: null, pain: 0 };
 let cfg = loadCfg(), acts = [], selected = null;
 let monthStart = firstOfMonth(new Date()), selDate = ymd(new Date());
-let monthEvents = [], monthActs = [], editing = null;
+let monthEvents = [], monthActs = [], editing = null, edType = "Run";
 
 function loadCfg() {
   try { return JSON.parse(localStorage.getItem("intervalsCfg")) || {}; } catch { return {}; }
@@ -462,7 +469,8 @@ $("save").addEventListener("click", async () => {
 
 /* ---------- 予定 ---------- */
 
-const catClass = c => c === "NOTE" ? "cat-note" : (c || "").startsWith("RACE") ? "cat-race" : "cat-workout";
+const catClass = (c, type) => c === "NOTE" ? "cat-note" : (c || "").startsWith("RACE") ? "cat-race"
+  : type === "WeightTraining" ? "cat-strength" : "cat-workout";
 
 const onDay = (list, key) => list.filter(x => x.start_date_local.slice(0, 10) === key);
 const sumKm = list => list.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
@@ -502,7 +510,7 @@ function renderMonth(gridStart, gridEnd) {
     // 大会を先に見せる
     const shown = [...evs].sort((a, b) => (catClass(b.category) === "cat-race") - (catClass(a.category) === "cat-race"));
     c.innerHTML = `<span class="num">${d.getDate()}</span>`
-      + shown.slice(0, 2).map(e => `<i class="lbl ${catClass(e.category)}">${esc(e.name)}</i>`).join("")
+      + shown.slice(0, 2).map(e => `<i class="lbl ${catClass(e.category, e.type)}">${esc(e.name)}</i>`).join("")
       + (shown.length > 2 ? `<span class="more">+${shown.length - 2}</span>` : "")
       + (acts.length ? `<span class="done">✓${sumKm(acts).toFixed(1)}</span>` : "");
     c.addEventListener("click", () => {
@@ -528,7 +536,7 @@ function renderDay() {
   for (const e of evs) {
     const meta = [e.moving_time ? `${Math.round(e.moving_time / 60)}分` : "", e.distance ? `${(e.distance / 1000).toFixed(1)}km` : ""].filter(Boolean).join("・");
     const b = document.createElement("button");
-    b.type = "button"; b.className = `ev ${catClass(e.category)}`;
+    b.type = "button"; b.className = `ev ${catClass(e.category, e.type)}`;
     b.innerHTML = `<span class="evname">${esc(e.name)}</span><span class="evmeta">${meta}</span>`;
     b.addEventListener("click", () => openEditor(e));
     el.appendChild(b);
@@ -554,6 +562,7 @@ function renderDay() {
 
 function openEditor(ev, date) {
   editing = ev;
+  edType = ev ? ev.type || "Run" : "Run";
   $("sheetTitle").textContent = ev ? "予定を編集" : "予定を追加";
   $("edTplWrap").hidden = !!ev;
   $("edTpl").value = "";
@@ -572,12 +581,13 @@ $("edTpl").addEventListener("change", () => {
   const t = TEMPLATES[Number($("edTpl").value)];
   if (!t) return;
   $("edName").value = t.name; $("edCat").value = t.cat; $("edDesc").value = t.desc;
+  edType = t.type || "Run";
 });
 
 $("edSave").addEventListener("click", async () => {
   const name = $("edName").value.trim();
   if (!name || !$("edDate").value) { showStatus("タイトルと日付を入れてください。", "err"); return; }
-  const body = { category: $("edCat").value, type: "Run", start_date_local: `${$("edDate").value}T00:00:00`, name, description: $("edDesc").value };
+  const body = { category: $("edCat").value, type: edType, start_date_local: `${$("edDate").value}T00:00:00`, name, description: $("edDesc").value };
   const btn = $("edSave");
   btn.disabled = true; btn.textContent = "保存中…";
   try {
