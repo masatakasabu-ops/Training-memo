@@ -124,15 +124,37 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 .weeknav { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
 .weeknav .label { text-align: center; font-weight: 700; font-family: var(--font-num); }
 .weeknav .label small { display: block; font-family: var(--font-body); font-weight: 400; font-size: .75rem; color: var(--muted); }
-.weektotal { display: flex; justify-content: center; gap: 16px; font-family: var(--font-num); font-size: .8rem; color: var(--muted); }
-.daylist { display: grid; gap: 10px; }
+.weektotal { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 16px; font-family: var(--font-num); font-size: .8rem; color: var(--muted); }
+
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.dow { text-align: center; font-size: .7rem; color: var(--muted); padding-bottom: 2px; }
+.dow.sun { color: var(--warn); }
+.cell {
+  min-height: 66px; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px; overflow: hidden;
+  border-radius: 8px; background: var(--surface); border: 1px solid var(--line);
+  color: var(--fg); font: inherit; text-align: left; cursor: pointer;
+}
+.cell.out { opacity: .4; }
+.cell[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.num { font-family: var(--font-num); font-size: .72rem; font-weight: 700; min-width: 1.6em; line-height: 1.6em; text-align: center; align-self: flex-start; border-radius: 999px; }
+.cell.today .num { background: var(--accent); color: var(--accent-fg); }
+.lbl {
+  display: block; font-style: normal; font-size: .6rem; line-height: 1.3; padding: 1px 3px; border-radius: 3px;
+  white-space: nowrap; overflow: hidden; background: color-mix(in srgb, var(--forest) 18%, transparent); color: var(--forest);
+}
+.lbl.cat-race { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 700; }
+.lbl.cat-note { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
+.more { font-size: .6rem; color: var(--muted); }
+.cell .done { margin-top: auto; }
+.done { font-family: var(--font-num); font-size: .6rem; color: var(--forest); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: .72rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .lbl { width: 14px; height: 10px; padding: 0; }
+
 .day { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
-.day.today { border-color: var(--accent); }
-.day.past { opacity: .85; }
 .dayhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .dlabel { font-weight: 700; }
 .dlabel .wd { color: var(--muted); font-weight: 400; margin-left: 2px; }
-.day.today .dlabel::after { content: "今日"; margin-left: 8px; font-size: .7rem; padding: 2px 6px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); vertical-align: 2px; }
 .add { font: inherit; font-size: .8rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
 .ev {
   display: grid; grid-template-columns: 4px 1fr auto; gap: 0 10px; align-items: center; width: 100%; text-align: left;
@@ -217,13 +239,22 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 
   <div id="planView" class="view" hidden>
     <div class="weeknav">
-      <button id="prevWeek" class="ghost" type="button" aria-label="前の週">←</button>
-      <div id="weekLabel" class="label">-</div>
-      <button id="nextWeek" class="ghost" type="button" aria-label="次の週">→</button>
+      <button id="prevMonth" class="ghost" type="button" aria-label="前の月">←</button>
+      <div id="monthLabel" class="label">-</div>
+      <button id="nextMonth" class="ghost" type="button" aria-label="次の月">→</button>
     </div>
+    <div>
+      <div id="cal" class="cal"><div class="hint">読み込み中…</div></div>
+      <div class="legend">
+        <span><i class="lbl cat-workout"></i>練習</span>
+        <span><i class="lbl cat-race"></i>大会</span>
+        <span><i class="lbl cat-note"></i>メモ・休養</span>
+        <span class="done">✓ 実績あり</span>
+      </div>
+    </div>
+    <section id="dayDetail" class="day" hidden></section>
     <div id="weekTotal" class="weektotal"></div>
-    <div id="dayList" class="daylist"><div class="hint">読み込み中…</div></div>
-    <button id="thisWeek" class="ghost" type="button">今週に戻る</button>
+    <button id="toToday" class="ghost" type="button">今日に戻る</button>
   </div>
 </main>
 
@@ -257,7 +288,7 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
     <label class="field" for="edDesc">内容
       <textarea id="edDesc" placeholder="- 40m 5:30/km Pace"></textarea>
     </label>
-    <div class="hint">「- 15m 5:30/km Pace」「8x」のように書くと、COROSの時計に手順付きで届きます。普通の文章でもOK。</div>
+    <div class="hint">「- 15m 5:30/km Pace」「8x」のように書くと、COROSの時計に手順付きで届きます。「m」は分の意味なので、距離は「0.2km」のように書きます。普通の文章でもOK。</div>
     <button id="edSave" class="primary" type="button">保存</button>
     <div class="btnrow">
       <button id="edCancel" class="ghost" type="button">閉じる</button>
@@ -273,12 +304,13 @@ const RPE_HINT = {1:"ほぼ休み",2:"散歩",3:"かなり楽なジョグ",4:"�
 const FATIGUE_HINT = {1:"とても元気",2:"元気",3:"普通",4:"重い",5:"かなり重い"};
 const TAGS = ["登りがきつい","下りで脚にきた","脚が軽い","呼吸がきつい","眠い","暑かった","藪が濃い","ミスあり"];
 const PATTERNS = { rpe: /RPE\s*[:：]\s*(\d+(?:\.\d+)?)/i, fatigue: /疲労\s*[:：]\s*(\d+(?:\.\d+)?)/, pain: /痛み\s*[:：]\s*(\d+(?:\.\d+)?)/ };
-const STRIDES = "5x\n- 100m 3:20/km Pace\n- 100m 6:30/km Pace";
+// 書式の「m」は分。距離は km で書く
+const STRIDES = "5x\n- 0.1km 3:20/km Pace\n- 0.1km 6:30/km Pace";
 const TEMPLATES = [
   { name: "ジョグ40分＋流し", cat: "WORKOUT", desc: `- 40m 5:30/km Pace\n\n${STRIDES}` },
   { name: "ジョグ50分＋補強＋流し", cat: "WORKOUT", desc: `- 50m 5:30/km Pace\n\n${STRIDES}\n\n補強：ステップアップ10×2、片脚スクワット10×2、横向き脚上げ20×2、カーフレイズ15×2` },
-  { name: "200m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 200m 3:35/km Pace\n- 200m 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n200mは42〜44秒。" },
-  { name: "400m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 400m 3:22/km Pace\n- 200m 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n400mは80〜82秒。" },
+  { name: "200m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 0.2km 3:35/km Pace\n- 0.2km 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n200mは42〜44秒。" },
+  { name: "400m×8", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n8x\n- 0.4km 3:22/km Pace\n- 0.2km 6:30/km Pace\n\n- 10m 5:40/km Pace\n\n400mは80〜82秒。" },
   { name: "閾値走 5分×4", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n4x\n- 5m 4:05/km Pace\n- 90s 6:00/km Pace\n\n- 10m 5:40/km Pace" },
   { name: "急坂ダッシュ15秒×10", cat: "WORKOUT", desc: "- 15m 5:30/km Pace\n\n10x\n- 15s 3:30/km Pace\n- 90s 9:00/km Pace\n\n- 10m 5:40/km Pace\n\n急な坂を全力の9割で。下りは歩いて戻る。" },
   { name: "宝匡山TT（RPE7）", cat: "WORKOUT", desc: "- 15m 5:40/km Pace\n\n- 25m 7:00/km Pace\n\n- 25m 6:00/km Pace\n\n登りはRPE7で一定。タイムと平均心拍を記録。下りはゆっくり。" },
@@ -290,7 +322,8 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const state = { rpe: null, fatigue: null, pain: 0 };
 let cfg = loadCfg(), acts = [], selected = null;
-let weekStart = monday(new Date()), weekEvents = [], editing = null, editDate = null;
+let monthStart = firstOfMonth(new Date()), selDate = ymd(new Date());
+let monthEvents = [], monthActs = [], editing = null;
 
 function loadCfg() {
   try { return JSON.parse(localStorage.getItem("intervalsCfg")) || {}; } catch { return {}; }
@@ -316,10 +349,11 @@ function showStatus(msg, kind) {
   el.textContent = msg; el.className = "status " + kind; el.hidden = !msg;
 }
 
-const pad = n => String(n).padStart(2, "0");
+function pad(n) { return String(n).padStart(2, "0"); }
 function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function monday(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 const WD = "日月火水木金土";
 
 /* ---------- 記録 ---------- */
@@ -430,68 +464,96 @@ $("save").addEventListener("click", async () => {
 
 const catClass = c => c === "NOTE" ? "cat-note" : (c || "").startsWith("RACE") ? "cat-race" : "cat-workout";
 
-async function loadWeek() {
-  const from = weekStart, to = addDays(weekStart, 6);
-  const daysToRace = Math.ceil((RACE - from) / 86400000);
-  $("weekLabel").innerHTML = `${from.getMonth() + 1}/${from.getDate()} 〜 ${to.getMonth() + 1}/${to.getDate()}<small>${daysToRace > 0 ? `インカレまで ${Math.ceil(daysToRace / 7)} 週` : ""}</small>`;
-  $("dayList").innerHTML = '<div class="hint">読み込み中…</div>';
-  $("weekTotal").textContent = "";
+const onDay = (list, key) => list.filter(x => x.start_date_local.slice(0, 10) === key);
+const sumKm = list => list.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
+const sumMin = list => list.reduce((s, a) => s + (a.moving_time || 0), 0) / 60;
+
+async function loadMonth() {
+  const gridStart = monday(monthStart);
+  const lastDay = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+  const gridEnd = addDays(monday(lastDay), 6);
+  $("monthLabel").innerHTML = `${monthStart.getFullYear()}年${monthStart.getMonth() + 1}月<small>インカレまで ${Math.max(0, Math.ceil((RACE - new Date()) / 86400000))} 日</small>`;
   try {
-    const q = `oldest=${ymd(from)}&newest=${ymd(to)}`;
-    const [evs, actsW] = await Promise.all([
+    const q = `oldest=${ymd(gridStart)}&newest=${ymd(gridEnd)}`;
+    [monthEvents, monthActs] = await Promise.all([
       api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/events?${q}`),
       api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?${q}`),
     ]);
-    weekEvents = evs;
-    renderWeek(evs, actsW);
+    renderMonth(gridStart, gridEnd);
+    renderDay();
   } catch (e) {
-    $("dayList").innerHTML = ""; showStatus(e.message, "err");
+    $("cal").innerHTML = ""; showStatus(e.message, "err");
   }
 }
 
-function renderWeek(evs, actsW) {
-  const box = $("dayList");
-  box.innerHTML = "";
+function renderMonth(gridStart, gridEnd) {
+  const box = $("cal");
+  box.innerHTML = "月火水木金土日".split("").map(w => `<div class="dow${w === "日" ? " sun" : ""}">${w}</div>`).join("");
   const todayKey = ymd(new Date());
-  let planMin = 0, planKm = 0, doneKm = 0, doneMin = 0;
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(weekStart, i), key = ymd(d);
-    const dayEvs = evs.filter(e => e.start_date_local.slice(0, 10) === key);
-    const dayActs = actsW.filter(a => a.start_date_local.slice(0, 10) === key);
-    const km = dayActs.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-    const min = dayActs.reduce((s, a) => s + (a.moving_time || 0), 0) / 60;
-    const rpes = dayActs.map(a => a.icu_rpe || parseNotes(a.description).rpe).filter(Boolean);
-    doneKm += km; doneMin += min;
-
-    const el = document.createElement("div");
-    el.className = "day" + (key === todayKey ? " today" : key < todayKey ? " past" : "");
-    el.innerHTML = `<div class="dayhead"><span class="dlabel">${d.getMonth() + 1}/${d.getDate()}<span class="wd">（${WD[d.getDay()]}）</span></span>
-      <button class="add" type="button">＋追加</button></div>`;
-    el.querySelector(".add").addEventListener("click", () => openEditor(null, key));
-
-    for (const e of dayEvs) {
-      if (e.category === "WORKOUT") { planMin += (e.moving_time || 0) / 60; planKm += (e.distance || 0) / 1000; }
-      const meta = [e.moving_time ? `${Math.round(e.moving_time / 60)}分` : "", e.distance ? `${(e.distance / 1000).toFixed(1)}km` : ""].filter(Boolean).join("・");
-      const b = document.createElement("button");
-      b.type = "button"; b.className = `ev ${catClass(e.category)}`;
-      b.innerHTML = `<span class="evname">${esc(e.name)}</span><span class="evmeta">${meta}</span>`;
-      b.addEventListener("click", () => openEditor(e));
-      el.appendChild(b);
-    }
-    if (!dayEvs.length) el.insertAdjacentHTML("beforeend", '<div class="emptyday">予定なし</div>');
-
-    if (dayActs.length) {
-      el.insertAdjacentHTML("beforeend", `<div class="actual">実績 ${km.toFixed(1)}km・${Math.round(min)}分${rpes.length ? `・RPE${Math.max(...rpes)}` : ""}</div>`);
-    } else if (key < todayKey && dayEvs.some(e => e.category === "WORKOUT")) {
-      el.insertAdjacentHTML("beforeend", '<div class="actual none">実績なし</div>');
-    }
-    box.appendChild(el);
+  for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) {
+    const key = ymd(d);
+    const evs = onDay(monthEvents, key);
+    const acts = onDay(monthActs, key);
+    const c = document.createElement("button");
+    c.type = "button"; c.id = `cell-${key}`;
+    c.className = "cell" + (d.getMonth() !== monthStart.getMonth() ? " out" : "") + (key === todayKey ? " today" : "");
+    c.setAttribute("aria-pressed", String(key === selDate));
+    c.setAttribute("aria-label", `${d.getMonth() + 1}月${d.getDate()}日 ${evs.map(e => e.name).join("、")}`);
+    // 大会を先に見せる
+    const shown = [...evs].sort((a, b) => (catClass(b.category) === "cat-race") - (catClass(a.category) === "cat-race"));
+    c.innerHTML = `<span class="num">${d.getDate()}</span>`
+      + shown.slice(0, 2).map(e => `<i class="lbl ${catClass(e.category)}">${esc(e.name)}</i>`).join("")
+      + (shown.length > 2 ? `<span class="more">+${shown.length - 2}</span>` : "")
+      + (acts.length ? `<span class="done">✓${sumKm(acts).toFixed(1)}</span>` : "");
+    c.addEventListener("click", () => {
+      $(`cell-${selDate}`)?.setAttribute("aria-pressed", "false");
+      selDate = key;
+      c.setAttribute("aria-pressed", "true");
+      renderDay();
+    });
+    box.appendChild(c);
   }
-  $("weekTotal").innerHTML = `<span>予定 ${planKm.toFixed(0)}km・${Math.round(planMin)}分</span><span>実績 ${doneKm.toFixed(0)}km・${Math.round(doneMin)}分</span>`;
+}
+
+function renderDay() {
+  const d = new Date(`${selDate}T00:00:00`);
+  const evs = onDay(monthEvents, selDate);
+  const acts = onDay(monthActs, selDate);
+  const todayKey = ymd(new Date());
+  const el = $("dayDetail");
+  el.hidden = false;
+  el.innerHTML = `<div class="dayhead"><span class="dlabel">${d.getMonth() + 1}/${d.getDate()}<span class="wd">（${WD[d.getDay()]}）</span></span>
+    <button class="add" type="button">＋追加</button></div>`;
+  el.querySelector(".add").addEventListener("click", () => openEditor(null, selDate));
+  for (const e of evs) {
+    const meta = [e.moving_time ? `${Math.round(e.moving_time / 60)}分` : "", e.distance ? `${(e.distance / 1000).toFixed(1)}km` : ""].filter(Boolean).join("・");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = `ev ${catClass(e.category)}`;
+    b.innerHTML = `<span class="evname">${esc(e.name)}</span><span class="evmeta">${meta}</span>`;
+    b.addEventListener("click", () => openEditor(e));
+    el.appendChild(b);
+  }
+  if (!evs.length) el.insertAdjacentHTML("beforeend", '<div class="emptyday">予定なし</div>');
+  if (acts.length) {
+    const rpes = acts.map(a => a.icu_rpe || parseNotes(a.description).rpe).filter(Boolean);
+    el.insertAdjacentHTML("beforeend", `<div class="actual">実績 ${sumKm(acts).toFixed(1)}km・${Math.round(sumMin(acts))}分${rpes.length ? `・RPE${Math.max(...rpes)}` : ""}</div>`);
+  } else if (selDate < todayKey && evs.some(e => e.category === "WORKOUT")) {
+    el.insertAdjacentHTML("beforeend", '<div class="actual none">実績なし</div>');
+  }
+
+  // 選んだ日を含む週の合計
+  const mon = monday(d);
+  const keys = Array.from({ length: 7 }, (_, i) => ymd(addDays(mon, i)));
+  const wEvs = monthEvents.filter(e => keys.includes(e.start_date_local.slice(0, 10)) && e.category === "WORKOUT");
+  const wActs = monthActs.filter(a => keys.includes(a.start_date_local.slice(0, 10)));
+  const sun = addDays(mon, 6);
+  $("weekTotal").innerHTML = `<span>${mon.getMonth() + 1}/${mon.getDate()}〜${sun.getMonth() + 1}/${sun.getDate()}の週</span>`
+    + `<span>予定 ${sumKm(wEvs).toFixed(0)}km・${Math.round(sumMin(wEvs))}分</span>`
+    + `<span>実績 ${sumKm(wActs).toFixed(0)}km・${Math.round(sumMin(wActs))}分</span>`;
 }
 
 function openEditor(ev, date) {
-  editing = ev; editDate = date;
+  editing = ev;
   $("sheetTitle").textContent = ev ? "予定を編集" : "予定を追加";
   $("edTplWrap").hidden = !!ev;
   $("edTpl").value = "";
@@ -523,7 +585,7 @@ $("edSave").addEventListener("click", async () => {
     else await api("POST", `/athlete/${encodeURIComponent(cfg.aid)}/events`, body);
     closeEditor();
     showStatus(editing ? "予定を更新しました。" : `${name} を追加しました。`, "ok");
-    loadWeek();
+    loadMonth();
   } catch (e) {
     showStatus(e.message, "err");
   } finally {
@@ -539,7 +601,7 @@ $("edDelete").addEventListener("click", async () => {
     const name = editing.name;
     closeEditor();
     showStatus(`${name} を削除しました。`, "ok");
-    loadWeek();
+    loadMonth();
   } catch (e) {
     showStatus(e.message, "err");
   }
@@ -548,9 +610,15 @@ $("edCancel").addEventListener("click", closeEditor);
 $("sheetBg").addEventListener("click", closeEditor);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("sheet").hidden) closeEditor(); });
 
-$("prevWeek").addEventListener("click", () => { weekStart = addDays(weekStart, -7); loadWeek(); });
-$("nextWeek").addEventListener("click", () => { weekStart = addDays(weekStart, 7); loadWeek(); });
-$("thisWeek").addEventListener("click", () => { weekStart = monday(new Date()); loadWeek(); });
+function goMonth(delta) {
+  monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + delta, 1);
+  const today = new Date();
+  selDate = ymd(today.getFullYear() === monthStart.getFullYear() && today.getMonth() === monthStart.getMonth() ? today : monthStart);
+  loadMonth();
+}
+$("prevMonth").addEventListener("click", () => goMonth(-1));
+$("nextMonth").addEventListener("click", () => goMonth(1));
+$("toToday").addEventListener("click", () => { monthStart = firstOfMonth(new Date()); goMonth(0); });
 
 /* ---------- 共通 ---------- */
 
@@ -563,7 +631,7 @@ function setTab(tab, load = true) {
   $("planView").hidden = tab !== "plan";
   showStatus("", "");
   try { localStorage.setItem("tab", tab); } catch {}
-  if (load && tab === "plan" && !planLoaded && cfg.aid && cfg.key) { planLoaded = true; loadWeek(); }
+  if (load && tab === "plan" && !planLoaded && cfg.aid && cfg.key) { planLoaded = true; loadMonth(); }
 }
 $("tab-memo").addEventListener("click", () => setTab("memo"));
 $("tab-plan").addEventListener("click", () => setTab("plan"));
@@ -572,12 +640,12 @@ function start() {
   if (!cfg.aid || !cfg.key) {
     $("setup").open = true;
     $("acts").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
-    $("dayList").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
+    $("cal").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
     return;
   }
   loadActs();
   planLoaded = !$("planView").hidden;
-  if (planLoaded) loadWeek();
+  if (planLoaded) loadMonth();
 }
 
 $("saveCfg").addEventListener("click", () => {
