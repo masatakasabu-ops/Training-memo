@@ -196,6 +196,45 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
   border: 1px solid var(--line); color: var(--fg); font-size: .8rem; text-decoration: none;
 }
 .vid:hover { border-color: var(--accent); }
+.startbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.startbtn {
+  font: inherit; font-weight: 700; font-size: .85rem; padding: 8px 14px; border-radius: 999px; border: 0; cursor: pointer;
+  background: var(--accent); color: var(--accent-fg);
+}
+
+/* 補強プレイヤー：画面全体。上に進み具合、中央に今の種目、下に操作ボタン */
+.player {
+  position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.pl-top { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; max-width: 560px; width: 100%; margin: 0 auto; }
+.pl-menu { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-meta { font-family: var(--font-num); font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.pl-close { font: inherit; font-size: 1.3rem; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.pl-bar { height: 4px; border-radius: 2px; background: var(--line); max-width: 560px; width: 100%; margin: 8px auto 0; overflow: hidden; }
+.pl-bar i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.pl-body { flex: 1; overflow-y: auto; max-width: 560px; width: 100%; margin: 0 auto; padding-block: 14px; display: grid; align-content: start; gap: 10px; }
+.pl-round { font-size: .8rem; color: var(--muted); letter-spacing: .06em; }
+.pl-name { margin: 0; font-size: 1.6rem; line-height: 1.25; text-wrap: balance; }
+.pl-side { display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 999px; font-size: 1rem; vertical-align: 4px; background: var(--water); color: var(--accent-fg); }
+.pl-amount { font-family: var(--font-num); font-size: 2.4rem; font-weight: 700; color: var(--accent); line-height: 1.1; }
+.pl-detail { font-size: .95rem; }
+.pl-cues { margin: 0; padding-left: 1.1em; font-size: .85rem; color: var(--muted); }
+.pl-timer {
+  font: inherit; font-family: var(--font-num); font-weight: 700; font-size: 4.2rem; line-height: 1; padding: 14px; width: 100%;
+  border-radius: 16px; border: 2px solid var(--accent); background: var(--surface); color: var(--fg); cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.pl-timer.running { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.pl-timer.done { border-color: var(--forest); color: var(--forest); }
+.pl-rest { text-align: center; display: grid; gap: 10px; justify-items: center; padding-top: 20px; }
+.pl-rest .pl-timer { border-color: var(--water); max-width: 320px; }
+.pl-list { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+.pl-next { max-width: 560px; width: 100%; margin: 0 auto; font-size: .85rem; color: var(--muted); min-height: 1.4em; }
+.pl-ctrl { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; max-width: 560px; width: 100%; margin: 6px auto 0; }
+.pl-ctrl .primary { min-height: 60px; font-size: 1.2rem; }
+.pl-ctrl button[hidden] + .primary { grid-column: 1 / -1; }
+
 .how { display: grid; gap: 10px; }
 .how > h4 { margin: 0; font-size: .8rem; color: var(--muted); letter-spacing: .08em; }
 
@@ -227,15 +266,6 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
   </div>
 
   <div id="status" class="status" hidden></div>
-
-  <details id="setup">
-    <summary>Intervals.icu の接続設定</summary>
-    <div class="settings">
-      <label class="field" for="aid">Athlete ID<input id="aid" type="text" placeholder="i123456" autocomplete="off"></label>
-      <label class="field" for="key">API Key<input id="key" type="password" placeholder="Settings › Developer Settings" autocomplete="off"></label>
-      <button id="saveCfg" class="ghost" type="button">保存して読み込む</button>
-    </div>
-  </details>
 
   <div id="memoView" class="view">
     <section>
@@ -292,12 +322,36 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
     <div id="exNav" class="exnav"></div>
     <div id="exLib" class="exlib"></div>
   </div>
+
+  <details id="setup">
+    <summary>Intervals.icu の接続設定</summary>
+    <div class="settings">
+      <label class="field" for="aid">Athlete ID<input id="aid" type="text" placeholder="i123456" autocomplete="off"></label>
+      <label class="field" for="key">API Key<input id="key" type="password" placeholder="Settings › Developer Settings" autocomplete="off"></label>
+      <button id="saveCfg" class="ghost" type="button">保存して読み込む</button>
+    </div>
+  </details>
 </main>
 
 <div id="memoBar" class="savebar">
   <div class="inner">
     <div id="preview" class="preview"></div>
     <button id="save" class="primary" type="button" disabled>保存</button>
+  </div>
+</div>
+
+<div id="player" class="player" hidden role="dialog" aria-modal="true" aria-labelledby="plMenu">
+  <div class="pl-top">
+    <span id="plMenu" class="pl-menu"></span>
+    <span id="plMeta" class="pl-meta"></span>
+    <button id="plClose" class="pl-close" type="button" aria-label="プレイヤーを閉じる">×</button>
+  </div>
+  <div class="pl-bar"><i id="plBar"></i></div>
+  <div id="plBody" class="pl-body"></div>
+  <div id="plNext" class="pl-next"></div>
+  <div class="pl-ctrl">
+    <button id="plPrev" class="ghost" type="button">◀ 前へ</button>
+    <button id="plMain" class="primary" type="button">次へ ▶</button>
   </div>
 </div>
 
@@ -394,6 +448,12 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : null;
 }
 
+// 接続設定は画面の一番下にあるので、開くときはそこまでスクロールする
+function openSetup() {
+  $("setup").open = true;
+  $("setup").scrollIntoView({ block: "end" });
+}
+
 function showStatus(msg, kind) {
   const el = $("status");
   el.textContent = msg; el.className = "status " + kind; el.hidden = !msg;
@@ -487,7 +547,7 @@ async function loadActs() {
     acts = list.filter(a => (a.moving_time || 0) >= 60).sort((x, y) => y.start_date_local.localeCompare(x.start_date_local));
     if (acts.length) select(acts.find(a => !isDone(a)) || acts[0]); else renderActs();
   } catch (e) {
-    $("acts").innerHTML = ""; showStatus(e.message, "err"); $("setup").open = true;
+    $("acts").innerHTML = ""; showStatus(e.message, "err"); openSetup();
   }
 }
 
@@ -979,12 +1039,15 @@ const EX_VIDEO = {
   power_walk: "power hiking uphill hands on knees technique",
 };
 
-function exCard(ex) {
+function exFrames(ex) {
   const labels = ex.labels || ["はじめ", "おわり"];
-  const frames = ex.frames.length === 1
+  return ex.frames.length === 1
     ? `<div class="frames one"><div class="frame">${figure(ex.frames[0])}</div></div>`
     : `<div class="frames"><div class="frame">${figure(ex.frames[0])}<span>${labels[0]}</span></div><span class="arrow">→</span><div class="frame">${figure(ex.frames[1])}<span>${labels[1]}</span></div></div>`;
-  return `<article class="ex" id="ex-${ex.id}"><h4>${ex.name}</h4>${frames}<p class="aim">${ex.aim}</p>`
+}
+
+function exCard(ex) {
+  return `<article class="ex" id="ex-${ex.id}"><h4>${ex.name}</h4>${exFrames(ex)}<p class="aim">${ex.aim}</p>`
     + `<ol>${ex.steps.map(s => `<li>${s}</li>`).join("")}</ol><ul>${ex.cues.map(s => `<li>${s}</li>`).join("")}</ul>`
     + (EX_VIDEO[ex.id] ? `<a class="vid" href="https://www.youtube.com/results?search_query=${encodeURIComponent(EX_VIDEO[ex.id])}" target="_blank" rel="noopener">▶ 動画で探す</a>` : "")
     + `</article>`;
@@ -1002,7 +1065,14 @@ function matchExercises(text) {
 function renderHow(text) {
   const exs = matchExercises(text);
   $("edHow").hidden = !exs.length;
-  $("edHow").innerHTML = exs.length ? `<h4>やり方（${exs.length}種目）</h4>` + exs.map(exCard).join("") : "";
+  $("edHow").innerHTML = exs.length
+    ? `<button id="edPlay" class="startbtn" type="button">▶ プレイヤーで始める</button><h4>やり方（${exs.length}種目）</h4>` + exs.map(exCard).join("")
+    : "";
+  $("edPlay")?.addEventListener("click", () => {
+    const name = $("edName").value.trim() || "補強", desc = $("edDesc").value;
+    closeEditor();
+    openPlayer(name, desc);
+  });
 }
 
 // 一覧は練習で行う順に並べる
@@ -1018,10 +1088,224 @@ function buildLibrary() {
   exBuilt = true;
   const sorted = [...EXERCISES].sort((a, b) => LIB_ORDER.indexOf(a.id) - LIB_ORDER.indexOf(b.id));
   $("exNav").innerHTML = Object.entries(EX_GROUPS).map(([g, v]) => `<a href="#ex-menu-${g}">${v.name}</a>`).join("");
-  $("exLib").innerHTML = Object.entries(EX_GROUPS).map(([g, v]) =>
-    `<section class="exgroup" id="ex-menu-${g}"><h3>${v.name}</h3><p>${v.note}</p>`
-    + sorted.filter(e => e.g === g).map(exCard).join("") + "</section>").join("");
+  const groupTemplates = g => TEMPLATES.filter(t => EX_LINK[Object.keys(EX_LINK).find(k => t.name.startsWith(k))] === g);
+  $("exLib").innerHTML = Object.entries(EX_GROUPS).map(([g, v]) => {
+    const tpls = groupTemplates(g);
+    const btns = tpls.length ? `<div class="startbtns">${tpls.map(t => `<button class="startbtn" type="button" data-tpl="${esc(t.name)}">▶ ${esc(t.name)}</button>`).join("")}</div>` : "";
+    return `<section class="exgroup" id="ex-menu-${g}"><h3>${v.name}</h3><p>${v.note}</p>${btns}`
+      + sorted.filter(e => e.g === g).map(exCard).join("") + "</section>";
+  }).join("");
+  $("exLib").querySelectorAll("[data-tpl]").forEach(b => b.addEventListener("click", () => {
+    const t = TEMPLATES.find(x => x.name === b.dataset.tpl);
+    openPlayer(t.name, t.desc);
+  }));
 }
+
+/* ---------- 補強プレイヤー ---------- */
+
+// 左右を分けて行う種目
+const UNILATERAL = new Set(["calf_raise", "runners_pose", "single_leg_stand", "star", "hop_stick", "map_balance",
+  "bulgarian", "stepup_knee", "sl_hip_lift", "box_pistol", "step_down", "hop_slope",
+  "side_leg_raise", "hip_hike", "skater_squat", "towel", "side_plank", "map_plank"]);
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+function buildSteps(desc) {
+  const items = desc.split("\n").map(l => l.trim()).filter(l => l.startsWith("・")).map(l => {
+    const text = l.slice(1).trim();
+    const ex = EXERCISES.find(e => e.keys.some(k => text.includes(k)));
+    const sec = text.match(/(\d+)\s*秒/), min = text.match(/(\d+)\s*分/);
+    const secs = /回/.test(text) ? 0 : sec ? +sec[1] : min ? +min[1] * 60 : 0;
+    // 「（3秒かけて下ろす）」や「2秒止まる」の秒数を回数と取り違えないよう、かっこを除いて「回」を優先する
+    const plain = text.replace(/（[^）]*）/g, "");
+    const amount = (plain.match(/(各方向|各)?\s*\d+(〜\d+)?\s*回/)
+      || plain.match(/(各方向|各)?\s*\d+(〜\d+)?\s*(秒|分|歩|m)(×[^\s]+)?/)
+      || plain.match(/\d+\s*周/) || [""])[0].trim();
+    const note = (text.match(/（([^）]+)）/) || ["", ""])[1];
+    const uni = ex && (UNILATERAL.has(ex.id) || (ex.id === "hops" && text.includes("片脚")));
+    // 同じ図解に対応する行が複数あるので、表示名は行の文から取る
+    const title = plain.replace(amount, "").trim() || (ex ? ex.name : text);
+    return { text, ex, secs, amount, note, uni, title };
+  });
+  const easy = desc.match(/(\d+)\s*(?:周|セット)(?:で|ずつで)OK/);
+  const plain = desc.match(/(\d+)\s*(?:周|セット)/);
+  const rounds = easy ? +easy[1] : /もう1周/.test(desc) ? 2 : plain ? +plain[1] : 1;
+  const rest = /2〜3分休/.test(desc) ? 150 : 60;
+  const both = /左右とも|（左右）|左右交互/.test(desc);
+  const steps = [];
+  for (let r = 1; r <= rounds; r++) {
+    for (const it of items) {
+      for (const side of it.uni && both ? ["右", "左"] : [null]) steps.push({ kind: "ex", ...it, side, round: r, rounds });
+    }
+    if (r < rounds) steps.push({ kind: "rest", secs: rest, round: r, rounds });
+  }
+  return steps;
+}
+
+const pl = { menu: "", desc: "", steps: [], i: -1, startedAt: 0, finishedAt: 0, remain: 0, endAt: 0, running: false, done: false, tick: null };
+let audio = null, wake = null;
+
+function beep(n = 1) {
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    for (let k = 0; k < n; k++) {
+      const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + k * 0.28;
+      o.frequency.value = 880; o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+      o.start(t0); o.stop(t0 + 0.22);
+    }
+  } catch {}
+  try { navigator.vibrate?.(n > 1 ? [200, 100, 200, 100, 200] : 150); } catch {}
+}
+
+async function keepAwake(on) {
+  try {
+    if (on && !wake) { wake = await navigator.wakeLock?.request("screen"); wake?.addEventListener("release", () => { wake = null; }); }
+    if (!on && wake) { await wake.release(); wake = null; }
+  } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (!$("player").hidden && document.visibilityState === "visible") keepAwake(true); });
+
+function openPlayer(menu, desc) {
+  Object.assign(pl, { menu, desc, steps: buildSteps(desc), i: -1, startedAt: 0, finishedAt: 0, running: false, done: false });
+  $("player").hidden = false;
+  document.body.style.overflow = "hidden";
+  clearInterval(pl.tick);
+  pl.tick = setInterval(tickPlayer, 250);
+  renderPlayer();
+}
+
+function closePlayer() {
+  clearInterval(pl.tick);
+  pl.running = false;
+  $("player").hidden = true;
+  document.body.style.overflow = "";
+  keepAwake(false);
+}
+
+function stepTitle(s) {
+  if (!s) return "おわり";
+  if (s.kind === "rest") return `休憩 ${fmtTime(s.secs)}`;
+  return s.title + (s.side ? `（${s.side}）` : "");
+}
+
+function setCountdown(secs, run) {
+  pl.remain = secs; pl.done = false; pl.running = run;
+  pl.endAt = Date.now() + secs * 1000;
+}
+
+function goStep(i) {
+  pl.i = i;
+  const s = pl.steps[i];
+  if (!s) { pl.finishedAt = Date.now(); pl.running = false; beep(3); }
+  else if (s.kind === "rest") setCountdown(s.secs, true);
+  else setCountdown(s.secs, false);
+  renderPlayer();
+}
+
+function renderPlayer() {
+  const total = pl.steps.length, i = pl.i, s = pl.steps[i];
+  $("plMenu").textContent = pl.menu;
+  $("plBar").style.width = `${total ? Math.max(0, Math.min(i, total)) / total * 100 : 0}%`;
+  $("plPrev").hidden = i <= 0 || i >= total;
+  const body = $("plBody"), main = $("plMain");
+
+  if (!total) {
+    body.innerHTML = `<p>このメニューには「・」で始まる種目の行がありません。説明文に「・種目名 回数」の形で書くと、プレイヤーで使えます。</p>`;
+    main.textContent = "閉じる"; $("plNext").textContent = ""; $("plMeta").textContent = "";
+    return;
+  }
+  if (i < 0) {
+    const s0 = pl.steps.filter(x => x.kind === "ex" && x.round === 1);
+    const rounds = pl.steps[0].rounds;
+    body.innerHTML = `<h2 class="pl-name">${esc(pl.menu)}</h2><div class="pl-round">${rounds}周・全${pl.steps.filter(x => x.kind === "ex").length}ステップ</div>`
+      + `<ol class="pl-list">${s0.map(x => `<li>${esc(stepTitle(x))} <span class="pl-meta">${esc(x.amount)}</span></li>`).join("")}</ol>`
+      + `<p class="hint">「次へ」で1つずつ進みます。秒数の種目はタイマーをタップして開始。周の間は休憩タイマーが自動で動きます。画面はつけたままになります。</p>`;
+    main.textContent = "▶ スタート"; $("plNext").textContent = ""; $("plMeta").textContent = "";
+    return;
+  }
+  if (i >= total) {
+    const secs = Math.round((pl.finishedAt - pl.startedAt) / 1000);
+    body.innerHTML = `<div class="pl-rest"><h2 class="pl-name">おつかれさま</h2><div class="pl-amount">${fmtTime(secs)}</div><p>${esc(pl.menu)} を最後までやりました。</p>`
+      + (cfg.aid && cfg.key ? `<button id="plLog" class="startbtn" type="button">完了を Intervals.icu に記録</button><div id="plLogMsg" class="hint"></div>` : "")
+      + `</div>`;
+    $("plLog")?.addEventListener("click", logPlayer);
+    main.textContent = "閉じる"; $("plNext").textContent = ""; return;
+  }
+
+  $("plMeta").textContent = `${i + 1}/${total}`;
+  const next = pl.steps[i + 1];
+  $("plNext").textContent = `次：${stepTitle(next)}`;
+  main.textContent = i === total - 1 ? "完了 ✓" : "次へ ▶";
+  if (s.kind === "rest") {
+    body.innerHTML = `<div class="pl-rest"><div class="pl-round">${s.round}周目おわり</div><h2 class="pl-name">休憩</h2>`
+      + `<button id="plTimer" class="pl-timer" type="button" aria-label="休憩タイマー"></button>`
+      + `<p>次は ${esc(stepTitle(next))} から ${s.round + 1}周目</p></div>`;
+  } else {
+    body.innerHTML = `<div class="pl-round">${s.round}周目 / ${s.rounds}周</div>`
+      + (s.ex ? exFrames(s.ex) : "")
+      + `<h2 class="pl-name">${esc(s.title)}${s.side ? `<span class="pl-side">${s.side}</span>` : ""}</h2>`
+      + (s.amount ? `<div class="pl-amount">${esc(s.amount)}</div>` : "")
+      + (s.note ? `<div class="pl-detail">${esc(s.note)}</div>` : "")
+      + (s.secs ? `<button id="plTimer" class="pl-timer" type="button" aria-label="タイマー"></button><div class="hint">タップで開始／一時停止</div>` : "")
+      + (s.ex ? `<ul class="pl-cues">${s.ex.cues.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : "");
+  }
+  $("plTimer")?.addEventListener("click", () => {
+    if (pl.done) { setCountdown(s.secs, true); }
+    else if (pl.running) { pl.remain = Math.max(0, (pl.endAt - Date.now()) / 1000); pl.running = false; }
+    else { pl.endAt = Date.now() + pl.remain * 1000; pl.running = true; }
+    tickPlayer();
+  });
+  tickPlayer();
+}
+
+function tickPlayer() {
+  if (pl.startedAt && pl.i < pl.steps.length) {
+    const el = Math.round((Date.now() - pl.startedAt) / 1000);
+    $("plMeta").textContent = `${pl.i + 1}/${pl.steps.length}・${fmtTime(el)}`;
+  }
+  const t = $("plTimer");
+  if (!t) return;
+  if (pl.running) {
+    pl.remain = Math.max(0, (pl.endAt - Date.now()) / 1000);
+    if (pl.remain === 0) { pl.running = false; pl.done = true; beep(3); }
+  }
+  t.textContent = pl.done ? "完了" : fmtTime(Math.ceil(pl.remain));
+  t.classList.toggle("running", pl.running);
+  t.classList.toggle("done", pl.done);
+}
+
+async function logPlayer() {
+  const btn = $("plLog");
+  btn.disabled = true;
+  const st = new Date(pl.startedAt);
+  const secs = Math.round((pl.finishedAt - pl.startedAt) / 1000);
+  const names = [...new Set(pl.steps.filter(s => s.kind === "ex").map(s => s.title))];
+  try {
+    await api("POST", `/athlete/${encodeURIComponent(cfg.aid)}/activities/manual`, {
+      type: "WeightTraining", name: pl.menu,
+      start_date_local: `${ymd(st)}T${pad(st.getHours())}:${pad(st.getMinutes())}:${pad(st.getSeconds())}`,
+      moving_time: secs, elapsed_time: secs,
+      description: `アプリのプレイヤーで実施（${pl.steps[0].rounds}周）\n${names.map(n => `・${n}`).join("\n")}`,
+    });
+    $("plLogMsg").textContent = "記録しました。「記録」タブでRPEも入れられます。";
+    btn.textContent = "記録済み";
+  } catch (e) {
+    $("plLogMsg").textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+$("plMain").addEventListener("click", () => {
+  if (!pl.steps.length || pl.i >= pl.steps.length) { closePlayer(); return; }
+  if (pl.i < 0) {
+    pl.startedAt = Date.now();
+    try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {}
+    keepAwake(true);
+  }
+  goStep(pl.i + 1);
+});
+$("plPrev").addEventListener("click", () => { if (pl.i > 0) goStep(pl.i - 1); });
+$("plClose").addEventListener("click", closePlayer);
 
 function openExFromHash() {
   if (!location.hash.startsWith("#ex")) return;
@@ -1052,7 +1336,7 @@ $("tab-ex").addEventListener("click", () => setTab("ex"));
 
 function start() {
   if (!cfg.aid || !cfg.key) {
-    $("setup").open = true;
+    openSetup();
     $("acts").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
     $("cal").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>';
     return;
