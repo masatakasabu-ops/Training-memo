@@ -191,6 +191,11 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 .frames .arrow { color: var(--accent); font-weight: 700; }
 .ex ol { margin: 0; padding-left: 1.3em; font-size: .88rem; display: grid; gap: 3px; }
 .ex ul { margin: 0; padding-left: 1.1em; font-size: .8rem; color: var(--muted); display: grid; gap: 2px; }
+.vid {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--fg); font-size: .8rem; text-decoration: none;
+}
+.vid:hover { border-color: var(--accent); }
 .how { display: grid; gap: 10px; }
 .how > h4 { margin: 0; font-size: .8rem; color: var(--muted); letter-spacing: .08em; }
 
@@ -954,13 +959,35 @@ const EXERCISES = [
     frames: [{ t: 40, la: [60, -5, 0], lb: [-25, -45, 0], aa: [35, 10], ab: [-20, 30], hl: ["A", "a"] }] },
 ];
 
+// YouTube の検索語。日本語の解説が多い種目は日本語、少ない種目は英語で探す
+const EX_VIDEO = {
+  calf_raise: "片脚 カーフレイズ 段差 やり方", runners_pose: "runner's pose single leg balance exercise",
+  single_leg_stand: "single leg balance exercise ankle sprain prevention", star: "star excursion balance exercise",
+  hops: "ankle hops plyometric runners", hop_stick: "single leg hop and stick landing",
+  map_balance: "single leg balance eyes closed exercise", squat_jump: "スクワットジャンプ やり方",
+  split_jump: "スプリットジャンプ やり方", bulgarian: "ブルガリアンスクワット やり方",
+  stepup_knee: "step up with knee drive exercise", sl_hip_lift: "single leg glute bridge foot on bench",
+  bent_knee_calf: "bent knee calf raise soleus", box_pistol: "box pistol squat",
+  nordic: "ノルディックハムストリング やり方", lunge_walk: "ウォーキングランジ やり方",
+  bounding: "バウンディング やり方", drop_land: "drop landing exercise knee",
+  step_down: "eccentric step down exercise", hop_slope: "lateral single leg hops",
+  side_leg_raise: "side lying hip abduction against wall", hip_hike: "hip hike exercise glute medius",
+  skater_squat: "skater squat", ankle_walks: "heel walk toe walk ankle exercise",
+  towel: "タオルギャザー やり方", side_plank: "サイドプランク 脚上げ",
+  map_plank: "plank arm reach", dead_bug: "デッドバグ やり方", bird_dog: "バードドッグ やり方",
+  mountain_climber: "マウンテンクライマー やり方", hollow: "ホロウボディ やり方",
+  power_walk: "power hiking uphill hands on knees technique",
+};
+
 function exCard(ex) {
   const labels = ex.labels || ["はじめ", "おわり"];
   const frames = ex.frames.length === 1
     ? `<div class="frames one"><div class="frame">${figure(ex.frames[0])}</div></div>`
     : `<div class="frames"><div class="frame">${figure(ex.frames[0])}<span>${labels[0]}</span></div><span class="arrow">→</span><div class="frame">${figure(ex.frames[1])}<span>${labels[1]}</span></div></div>`;
   return `<article class="ex" id="ex-${ex.id}"><h4>${ex.name}</h4>${frames}<p class="aim">${ex.aim}</p>`
-    + `<ol>${ex.steps.map(s => `<li>${s}</li>`).join("")}</ol><ul>${ex.cues.map(s => `<li>${s}</li>`).join("")}</ul></article>`;
+    + `<ol>${ex.steps.map(s => `<li>${s}</li>`).join("")}</ol><ul>${ex.cues.map(s => `<li>${s}</li>`).join("")}</ul>`
+    + (EX_VIDEO[ex.id] ? `<a class="vid" href="https://www.youtube.com/results?search_query=${encodeURIComponent(EX_VIDEO[ex.id])}" target="_blank" rel="noopener">▶ 動画で探す</a>` : "")
+    + `</article>`;
 }
 
 function matchExercises(text) {
