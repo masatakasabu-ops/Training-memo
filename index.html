@@ -74,7 +74,9 @@ section { min-width: 0; }
 .gpxbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; }
 .gpxbar .ghost { padding: 8px 14px; }
 .gpxbar .ghost.ready { border-color: var(--accent); color: var(--accent); font-weight: 700; }
-.gpxbar .hint { margin-top: 0; }
+.gpxbar .hint { margin-top: 0; flex-basis: 100%; }
+.gpxbar .route { text-decoration: none; font-weight: 700; border-color: var(--accent); color: var(--accent); }
+.gpxbar .off { opacity: .45; pointer-events: none; border-color: var(--line); color: var(--fg); }
 .act {
   display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; text-align: left;
   width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
@@ -288,7 +290,8 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
       <h2>どの練習？<small>直近3日</small></h2>
       <div id="acts" class="acts"><div class="hint">読み込み中…</div></div>
       <div class="gpxbar">
-        <button id="gpxBtn" class="ghost" type="button" disabled>GPXを準備</button>
+        <a id="routeBtn" class="ghost route off" href="https://masatakasabu-ops.github.io/Route-map/" target="_blank" rel="noopener" aria-disabled="true">ルート図を作る ↗</a>
+        <button id="gpxBtn" class="ghost" type="button" disabled>GPXを保存</button>
         <span id="gpxMsg" class="hint"></span>
       </div>
     </section>
@@ -573,16 +576,23 @@ async function loadActs() {
   }
 }
 
-// GPX を取り出して反省アプリ（Control など）に渡す。
-// iPhone の Safari はタップ直後でないと共有メニューを開けないので、「準備」と「共有」の2回のタップに分ける
+// 選んだ練習をルート図（別サイト）で開く、または GPX を保存する。
+// iPhone の Safari はタップ直後でないと共有メニューを開けないので、GPX は「取得」と「保存」の2回のタップに分ける
+const ROUTE_URL = "https://masatakasabu-ops.github.io/Route-map/";
+const GPS_TYPES = new Set(["Run", "TrailRun", "Hike", "Walk"]);
 let gpxFile = null;
 
 function resetGpx() {
   gpxFile = null;
-  $("gpxBtn").textContent = "GPXを準備";
+  const gps = !!selected && GPS_TYPES.has(selected.type);
+  const rb = $("routeBtn");
+  rb.href = gps ? `${ROUTE_URL}#act-${encodeURIComponent(selected.id)}` : ROUTE_URL;
+  rb.classList.toggle("off", !gps);
+  rb.setAttribute("aria-disabled", String(!gps));
+  $("gpxBtn").textContent = "GPXを保存";
   $("gpxBtn").classList.remove("ready");
-  $("gpxBtn").disabled = !selected;
-  $("gpxMsg").textContent = "";
+  $("gpxBtn").disabled = !gps;
+  $("gpxMsg").textContent = selected && !gps ? "位置情報のない記録です。" : "";
 }
 
 async function prepareGpx() {
@@ -599,7 +609,7 @@ async function prepareGpx() {
     const name = `${d.slice(0, 10)}_${d.slice(11, 13)}${d.slice(14, 16)}_${(a.name || "run").replace(/[\\/:*?"<>|\s]+/g, "_")}.gpx`;
     gpxFile = new File([text], name, { type: "application/gpx+xml" });
     const canShare = !!navigator.canShare?.({ files: [gpxFile] });
-    btn.textContent = canShare ? "Controlで開く（共有）" : "GPXを保存";
+    btn.textContent = canShare ? "保存・共有する" : "ダウンロード";
     btn.classList.add("ready");
     $("gpxMsg").textContent = `${name}（${Math.round(text.length / 1024)}KB）`;
   } catch (e) {
