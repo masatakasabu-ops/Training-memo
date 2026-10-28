@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>練習メモ</title>
+<meta name="theme-color" content="#f4f6f1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* 1カラム。上から「どの練習か → RPE → 疲労 → 痛み → メモ」、保存ボタンは画面下に固定 */
+:root {
+  --bg: #f4f6f1;
+  --surface: #ffffff;
+  --fg: #1d241c;
+  --muted: #5d6a5b;
+  --line: #d9dfd3;
+  --accent: #e8731a;      /* コントロールフラッグのオレンジ */
+  --accent-fg: #ffffff;
+  --forest: #3f7d3a;
+  --warn: #c0392b;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141913; --surface: #1d241c; --fg: #e8ede4; --muted: #9aa697; --line: #2f392d;
+    --accent: #f08a35; --accent-fg: #1a1208; --forest: #7cbf74; --warn: #ef6b5b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141913; --surface: #1d241c; --fg: #e8ede4; --muted: #9aa697; --line: #2f392d;
+  --accent: #f08a35; --accent-fg: #1a1208; --forest: #7cbf74; --warn: #ef6b5b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  font-size: 16px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px calc(96px + env(safe-area-inset-bottom, 0px));
+}
+[hidden] { display: none !important; }
+main { max-width: 560px; margin: 0 auto; display: grid; gap: 22px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 1.35rem; margin: 0; letter-spacing: .02em; }
+.countdown { font-size: .85rem; color: var(--muted); }
+.countdown b { font-family: var(--font-num); color: var(--accent); font-size: 1.05rem; }
+h2 { font-size: .8rem; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; font-weight: 700; }
+h2 small { font-weight: 400; letter-spacing: 0; margin-left: 6px; }
+section { min-width: 0; }
+
+.acts { display: grid; gap: 8px; }
+.act {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; text-align: left;
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--fg); font: inherit; cursor: pointer;
+}
+.act[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.act .when { font-weight: 700; }
+.act .stats { grid-column: 1; font-family: var(--font-num); font-size: .8rem; color: var(--muted); }
+.act .chip { grid-row: 1 / span 2; grid-column: 2; font-size: .75rem; padding: 3px 8px; border-radius: 999px; }
+.chip.done { background: color-mix(in srgb, var(--forest) 18%, transparent); color: var(--forest); }
+.chip.todo { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+
+.scale { display: grid; gap: 6px; }
+.scale.s10 { grid-template-columns: repeat(5, 1fr); }
+.scale.s5 { grid-template-columns: repeat(5, 1fr); }
+.scale.s11 { grid-template-columns: repeat(6, 1fr); }
+.scale button {
+  min-height: 48px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  color: var(--fg); font-family: var(--font-num); font-size: 1.1rem; font-weight: 700; cursor: pointer;
+}
+.scale button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.scale.pain button[aria-pressed="true"].hurt { background: var(--warn); border-color: var(--warn); }
+.hint { font-size: .8rem; color: var(--muted); margin-top: 6px; min-height: 1.2em; }
+
+textarea, input[type="text"], input[type="password"] {
+  width: 100%; font: inherit; color: var(--fg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+}
+textarea { min-height: 88px; resize: vertical; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tags button {
+  font: inherit; font-size: .8rem; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px dashed var(--line); background: transparent; color: var(--muted);
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.savebar {
+  position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--line);
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.savebar .inner { max-width: 560px; margin: 0 auto; display: grid; gap: 6px; }
+.preview { font-family: var(--font-num); font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.primary {
+  width: 100%; min-height: 52px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-fg);
+  font: inherit; font-weight: 700; font-size: 1.05rem; cursor: pointer;
+}
+.primary:disabled { opacity: .45; cursor: default; }
+.status { font-size: .9rem; padding: 10px 12px; border-radius: 10px; }
+.status.ok { background: color-mix(in srgb, var(--forest) 15%, transparent); color: var(--forest); }
+.status.err { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+details { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 12px; }
+summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
+.settings { display: grid; gap: 10px; margin-top: 10px; }
+.settings label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+.ghost { font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+@media (prefers-reduced-motion: no-preference) { .scale button, .act { transition: background .12s, border-color .12s; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>練習メモ</h1>
+    <div class="countdown">インカレまで <b id="days">-</b> 日</div>
+  </header>
+
+  <div id="status" class="status" hidden></div>
+
+  <details id="setup">
+    <summary>Intervals.icu の接続設定</summary>
+    <div class="settings">
+      <label for="aid">Athlete ID<input id="aid" type="text" placeholder="i123456" autocomplete="off"></label>
+      <label for="key">API Key<input id="key" type="password" placeholder="Settings › Developer Settings" autocomplete="off"></label>
+      <button id="saveCfg" class="ghost" type="button">保存して読み込む</button>
+    </div>
+  </details>
+
+  <section>
+    <h2>どの練習？<small>直近7日</small></h2>
+    <div id="acts" class="acts"><div class="hint">読み込み中…</div></div>
+  </section>
+
+  <section>
+    <h2>RPE（きつさ）</h2>
+    <div id="rpe" class="scale s10"></div>
+    <div id="rpeHint" class="hint"></div>
+  </section>
+
+  <section>
+    <h2>疲労（今朝の体の重さ）</h2>
+    <div id="fatigue" class="scale s5"></div>
+    <div id="fatigueHint" class="hint"></div>
+  </section>
+
+  <section>
+    <h2>痛み（腸脛靭帯など）</h2>
+    <div id="pain" class="scale s11 pain"></div>
+  </section>
+
+  <section>
+    <h2>メモ</h2>
+    <textarea id="memo" placeholder="例：登り後半で脚が止まった"></textarea>
+    <div id="tags" class="tags"></div>
+  </section>
+</main>
+
+<div class="savebar">
+  <div class="inner">
+    <div id="preview" class="preview"></div>
+    <button id="save" class="primary" type="button" disabled>保存</button>
+  </div>
+</div>
+
+<script>
+const API = "https://intervals.icu/api/v1";
+const RACE = new Date("2027-03-13T00:00:00");
+const RPE_HINT = {1:"ほぼ休み",2:"散歩",3:"かなり楽なジョグ",4:"楽なジョグ",5:"普通のジョグ",6:"少しきつい",7:"閾値走くらい",8:"きつい",9:"とてもきつい",10:"全力"};
+const FATIGUE_HINT = {1:"とても元気",2:"元気",3:"普通",4:"重い",5:"かなり重い"};
+const TAGS = ["登りがきつい","下りで脚にきた","脚が軽い","呼吸がきつい","眠い","暑かった","藪が濃い","ミスあり"];
+const PATTERNS = { rpe: /RPE\s*[:：]\s*(\d+(?:\.\d+)?)/i, fatigue: /疲労\s*[:：]\s*(\d+(?:\.\d+)?)/, pain: /痛み\s*[:：]\s*(\d+(?:\.\d+)?)/ };
+
+const $ = id => document.getElementById(id);
+const state = { rpe: null, fatigue: null, pain: 0 };
+let cfg = loadCfg(), acts = [], selected = null;
+
+function loadCfg() {
+  try { return JSON.parse(localStorage.getItem("intervalsCfg")) || {}; } catch { return {}; }
+}
+function storeCfg(c) {
+  try { localStorage.setItem("intervalsCfg", JSON.stringify(c)); } catch {}
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: { Authorization: "Basic " + btoa("API_KEY:" + cfg.key), "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401 || res.status === 403) throw new Error("接続できません。Athlete ID と API Key を確認してください。");
+  if (!res.ok) throw new Error(`Intervals.icu がエラーを返しました（${res.status}）。少し待ってから再度お試しください。`);
+  return res.json();
+}
+
+function showStatus(msg, kind) {
+  const el = $("status");
+  el.textContent = msg; el.className = "status " + kind; el.hidden = !msg;
+}
+
+function ymd(d) {
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function parseNotes(desc) {
+  const out = { rpe: null, fatigue: null, pain: null, memo: "" };
+  if (!desc) return out;
+  for (const k in PATTERNS) { const m = desc.match(PATTERNS[k]); if (m) out[k] = Number(m[1]); }
+  const m = desc.match(/メモ\s*[:：]\s*([\s\S]*)/);
+  if (m) out.memo = m[1].trim();
+  else if (!PATTERNS.rpe.test(desc) && !PATTERNS.fatigue.test(desc)) out.memo = desc.trim();
+  return out;
+}
+
+function composeDesc() {
+  const parts = [];
+  if (state.rpe != null) parts.push(`RPE:${state.rpe}`);
+  if (state.fatigue != null) parts.push(`疲労:${state.fatigue}`);
+  parts.push(`痛み:${state.pain}`);
+  const memo = $("memo").value.trim();
+  if (memo) parts.push(`メモ:${memo}`);
+  return parts.join(" ");
+}
+
+function buildScale(id, from, to, key, hints) {
+  const box = $(id);
+  box.innerHTML = "";
+  for (let v = from; v <= to; v++) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = v; b.id = `${id}-${v}`;
+    if (key === "pain" && v >= 3) b.classList.add("hurt");
+    b.addEventListener("click", () => { state[key] = v; render(); });
+    box.appendChild(b);
+  }
+}
+
+function render() {
+  for (const [id, key, from, to] of [["rpe","rpe",1,10],["fatigue","fatigue",1,5],["pain","pain",0,10]]) {
+    for (let v = from; v <= to; v++) $(`${id}-${v}`).setAttribute("aria-pressed", String(state[key] === v));
+  }
+  $("rpeHint").textContent = state.rpe ? RPE_HINT[state.rpe] : "1 散歩 ／ 5 ジョグ ／ 7 閾値走 ／ 10 全力";
+  $("fatigueHint").textContent = state.fatigue ? FATIGUE_HINT[state.fatigue] : "1 とても元気 ／ 3 普通 ／ 5 かなり重い";
+  $("preview").textContent = selected ? composeDesc() : "練習を選んでください";
+  $("save").disabled = !selected || state.rpe == null;
+}
+
+function renderActs() {
+  const box = $("acts");
+  box.innerHTML = "";
+  if (!acts.length) { box.innerHTML = '<div class="hint">直近7日の記録がありません。COROSから同期されるまで少し待ってください。</div>'; return; }
+  for (const a of acts) {
+    const n = parseNotes(a.description);
+    const done = (a.icu_rpe || n.rpe) != null && n.fatigue != null;
+    const d = new Date(a.start_date_local);
+    const wd = "日月火水木金土"[d.getDay()];
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "act"; b.id = `act-${a.id}`;
+    b.setAttribute("aria-pressed", String(selected && selected.id === a.id));
+    b.innerHTML = `<span class="when">${d.getMonth() + 1}/${d.getDate()}（${wd}）${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}</span>
+      <span class="stats">${((a.distance || 0) / 1000).toFixed(1)}km ・ ↑${Math.round(a.total_elevation_gain || 0)}m ・ ${Math.round((a.moving_time || 0) / 60)}分</span>
+      <span class="chip ${done ? "done" : "todo"}">${done ? "記入済" : "未記入"}</span>`;
+    b.addEventListener("click", () => select(a));
+    box.appendChild(b);
+  }
+}
+
+function select(a) {
+  selected = a;
+  const n = parseNotes(a.description);
+  state.rpe = n.rpe ?? a.icu_rpe ?? null;
+  state.fatigue = n.fatigue;
+  state.pain = n.pain ?? 0;
+  $("memo").value = n.memo;
+  showStatus("", "");
+  renderActs(); render();
+}
+
+async function loadActs() {
+  if (!cfg.aid || !cfg.key) { $("setup").open = true; $("acts").innerHTML = '<div class="hint">最初に接続設定を入力してください。</div>'; return; }
+  try {
+    const today = new Date(), from = new Date(); from.setDate(today.getDate() - 6);
+    const list = await api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?oldest=${ymd(from)}&newest=${ymd(today)}`);
+    // 1分未満の細切れ記録（大会のアップ等）は除く
+    acts = list.filter(a => (a.moving_time || 0) >= 60).sort((x, y) => y.start_date_local.localeCompare(x.start_date_local));
+    const firstTodo = acts.find(a => { const n = parseNotes(a.description); return (a.icu_rpe || n.rpe) == null || n.fatigue == null; });
+    if (acts.length) select(firstTodo || acts[0]); else renderActs();
+  } catch (e) {
+    $("acts").innerHTML = ""; showStatus(e.message, "err"); $("setup").open = true;
+  }
+}
+
+$("saveCfg").addEventListener("click", () => {
+  cfg = { aid: $("aid").value.trim(), key: $("key").value.trim() };
+  storeCfg(cfg);
+  $("setup").open = false;
+  loadActs();
+});
+
+$("save").addEventListener("click", async () => {
+  if (!selected) return;
+  const btn = $("save");
+  btn.disabled = true; btn.textContent = "保存中…";
+  try {
+    const desc = composeDesc();
+    const updated = await api("PUT", `/activity/${selected.id}`, { description: desc, icu_rpe: state.rpe });
+    Object.assign(selected, { description: updated.description ?? desc, icu_rpe: updated.icu_rpe ?? state.rpe });
+    showStatus("保存しました。", "ok");
+    renderActs();
+    const next = acts.find(a => { const n = parseNotes(a.description); return a !== selected && ((a.icu_rpe || n.rpe) == null || n.fatigue == null); });
+    if (next) setTimeout(() => select(next), 900);
+  } catch (e) {
+    showStatus(e.message, "err");
+  } finally {
+    btn.textContent = "保存"; render();
+  }
+});
+
+$("memo").addEventListener("input", render);
+for (const t of TAGS) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = "＋" + t;
+  b.addEventListener("click", () => { const m = $("memo"); m.value = m.value ? `${m.value}、${t}` : t; render(); });
+  $("tags").appendChild(b);
+}
+
+buildScale("rpe", 1, 10, "rpe");
+buildScale("fatigue", 1, 5, "fatigue");
+buildScale("pain", 0, 10, "pain");
+$("days").textContent = Math.max(0, Math.ceil((RACE - new Date()) / 86400000));
+$("aid").value = cfg.aid || "";
+$("key").value = cfg.key || "";
+render();
+loadActs();
+</script>
+</body>
+</html>
