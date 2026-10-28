@@ -62,7 +62,19 @@ section { min-width: 0; }
 }
 .tabs button[aria-selected="true"] { background: var(--surface); color: var(--fg); }
 
+.totals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.totals:empty { display: none; }
+.tile { display: grid; gap: 2px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.tile .k { font-size: .75rem; color: var(--muted); letter-spacing: .06em; }
+.tile .v { font-family: var(--font-num); font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile .v small { font-size: .9rem; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.tile .s { font-family: var(--font-num); font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
 .acts { display: grid; gap: 8px; }
+.gpxbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; }
+.gpxbar .ghost { padding: 8px 14px; }
+.gpxbar .ghost.ready { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.gpxbar .hint { margin-top: 0; }
 .act {
   display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; text-align: left;
   width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
@@ -270,9 +282,15 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
   <div id="status" class="status" hidden></div>
 
   <div id="memoView" class="view">
+    <section id="totals" class="totals" aria-label="走行距離"></section>
+
     <section>
       <h2>どの練習？<small>直近3日</small></h2>
       <div id="acts" class="acts"><div class="hint">読み込み中…</div></div>
+      <div class="gpxbar">
+        <button id="gpxBtn" class="ghost" type="button" disabled>GPXを準備</button>
+        <span id="gpxMsg" class="hint"></span>
+      </div>
     </section>
 
     <section>
@@ -539,6 +557,7 @@ function select(a) {
   state.pain = n.pain ?? 0;
   $("memo").value = n.memo;
   showStatus("", "");
+  resetGpx();
   renderActs(); render();
 }
 
@@ -551,6 +570,90 @@ async function loadActs() {
     if (acts.length) select(acts.find(a => !isDone(a)) || acts[0]); else renderActs();
   } catch (e) {
     $("acts").innerHTML = ""; showStatus(e.message, "err"); openSetup();
+  }
+}
+
+// GPX を取り出して反省アプリ（Control など）に渡す。
+// iPhone の Safari はタップ直後でないと共有メニューを開けないので、「準備」と「共有」の2回のタップに分ける
+let gpxFile = null;
+
+function resetGpx() {
+  gpxFile = null;
+  $("gpxBtn").textContent = "GPXを準備";
+  $("gpxBtn").classList.remove("ready");
+  $("gpxBtn").disabled = !selected;
+  $("gpxMsg").textContent = "";
+}
+
+async function prepareGpx() {
+  const a = selected, btn = $("gpxBtn");
+  btn.disabled = true;
+  $("gpxMsg").textContent = "取得中…";
+  try {
+    const res = await fetch(`${API}/activity/${a.id}/gpx-file`, { headers: { Authorization: "Basic " + btoa("API_KEY:" + cfg.key) } });
+    if (!res.ok) throw new Error(`GPXを取得できませんでした（${res.status}）`);
+    const text = await res.text();
+    if (!text.includes("<trkpt")) throw new Error("この記録には位置情報がありません。");
+    if (selected !== a) return;  // 取得中に別の練習が選ばれた
+    const d = a.start_date_local;
+    const name = `${d.slice(0, 10)}_${d.slice(11, 13)}${d.slice(14, 16)}_${(a.name || "run").replace(/[\\/:*?"<>|\s]+/g, "_")}.gpx`;
+    gpxFile = new File([text], name, { type: "application/gpx+xml" });
+    const canShare = !!navigator.canShare?.({ files: [gpxFile] });
+    btn.textContent = canShare ? "Controlで開く（共有）" : "GPXを保存";
+    btn.classList.add("ready");
+    $("gpxMsg").textContent = `${name}（${Math.round(text.length / 1024)}KB）`;
+  } catch (e) {
+    $("gpxMsg").textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deliverGpx() {
+  const f = gpxFile;
+  if (navigator.canShare?.({ files: [f] })) {
+    try {
+      await navigator.share({ files: [f], title: f.name });
+      $("gpxMsg").textContent = "共有しました。";
+    } catch (e) {
+      if (e.name !== "AbortError") $("gpxMsg").textContent = "共有できませんでした。もう一度押すか、共有メニューの「ファイルに保存」を選んでください。";
+    }
+    return;
+  }
+  const url = URL.createObjectURL(f), link = document.createElement("a");
+  link.href = url; link.download = f.name;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  $("gpxMsg").textContent = `${f.name} を保存しました。`;
+}
+
+$("gpxBtn").addEventListener("click", () => (gpxFile ? deliverGpx() : prepareGpx()));
+
+const RUN_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
+
+// 今週・今月の走行距離（先週・先月と比べる）。週は月曜はじまり
+async function loadTotals() {
+  const today = new Date(), todayKey = ymd(today);
+  const mon = monday(today), lastMon = addDays(mon, -7);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const from = lastMon < lastMonthStart ? lastMon : lastMonthStart;
+  try {
+    const list = await api("GET", `/athlete/${encodeURIComponent(cfg.aid)}/activities?oldest=${ymd(from)}&newest=${todayKey}`);
+    const runs = list.filter(a => RUN_TYPES.has(a.type));
+    const sum = (a, b) => {
+      const sel = runs.filter(r => { const k = r.start_date_local.slice(0, 10); return k >= ymd(a) && k <= ymd(b); });
+      return { km: sumKm(sel), up: sel.reduce((s, r) => s + (r.total_elevation_gain || 0), 0) };
+    };
+    const tw = sum(mon, today), lw = sum(lastMon, addDays(mon, -1));
+    const tm = sum(monthStart, today), lm = sum(lastMonthStart, addDays(monthStart, -1));
+    const tile = (k, cur, prevLabel, prev) => `<div class="tile"><span class="k">${k}</span>`
+      + `<span class="v">${cur.km.toFixed(1)}<small>km</small></span>`
+      + `<span class="s">↑${Math.round(cur.up)}m ・ ${prevLabel} ${prev.km.toFixed(0)}km</span></div>`;
+    $("totals").innerHTML = tile(`今週（${mon.getMonth() + 1}/${mon.getDate()}〜）`, tw, "先週", lw)
+      + tile(`${today.getMonth() + 1}月`, tm, `${lastMonthStart.getMonth() + 1}月`, lm);
+  } catch {
+    $("totals").innerHTML = "";
   }
 }
 
@@ -1354,6 +1457,7 @@ function start() {
     return;
   }
   loadActs();
+  loadTotals();
   planLoaded = !$("planView").hidden;
   if (planLoaded) loadMonth();
 }
