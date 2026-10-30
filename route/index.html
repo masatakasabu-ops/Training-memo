@@ -1649,7 +1649,7 @@ async function loadList() {
   msg.textContent = "読み込み中…";
   const { data, error } = await sb.from("routes").select("id,title,race_date,summary,updated_at")
     .order("race_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
-  if (error) { msg.textContent = `一覧を読めませんでした：${error.message}`; return; }
+  if (error) { msg.textContent = navigator.onLine ? `一覧を読めませんでした：${error.message}` : "電波がないため、保存したルート図は読み込めません。"; return; }
   msg.textContent = data.length ? "" : "まだ保存したルート図はありません。「＋ 新しく作る」から始めてください。";
   let urls = {};
   if (data.length) {

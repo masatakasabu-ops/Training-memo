@@ -31,9 +31,13 @@ html, body { height: 100%; }
 html { padding-top: env(safe-area-inset-top, 0px); background: var(--bg); }
 body {
   margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
-  display: grid; grid-template-rows: minmax(0, 1fr) auto; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden;
 }
 [hidden] { display: none !important; }
+.offline {
+  padding: 6px max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--line); color: var(--fg); font-size: .75rem; text-align: center;
+}
 .frames { position: relative; min-height: 0; }
 .frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
 .dock {
@@ -50,12 +54,13 @@ body {
 </style>
 </head>
 <body>
+<div class="offline" id="offline" role="status">電波がありません ・ 最後に読み込んだ内容を表示しています</div>
 <div class="frames" id="frames"></div>
 <nav class="dock" role="tablist" aria-label="アプリの切り替え">
   <button type="button" role="tab" id="tabMemo" aria-selected="true">
     <!-- 記録のバインダー -->
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>
-    練習メモ
+    トレーニング
   </button>
   <button type="button" role="tab" id="tabRoute" aria-selected="false">
     <!-- 折りたたんだ地図とレッグ -->
@@ -71,7 +76,7 @@ const frames = {};
 function frame(name, src) {
   if (!frames[name]) {
     const f = frames[name] = document.createElement("iframe");
-    f.title = name === "memo" ? "練習メモ" : "ルート図";
+    f.title = name === "memo" ? "トレーニング" : "ルート図";
     f.ready = new Promise(r => f.addEventListener("load", r, { once: true }));
     f.src = src;
     $("frames").append(f);
@@ -97,6 +102,11 @@ window.openRoute = async actId => {
 
 $("tabMemo").addEventListener("click", () => show("memo"));
 $("tabRoute").addEventListener("click", () => { frame("route", "route/"); show("route"); });
+
+// 電波がなくても開けるように、アプリのファイルを端末に保存しておく（sw.js）
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+const online = () => { $("offline").hidden = navigator.onLine; };
+addEventListener("online", online); addEventListener("offline", online); online();
 
 // 「…/Training-memo/#ex-menu-P」のような図解へのリンクは、そのまま練習メモに渡す
 frame("memo", "memo.html" + location.hash);
