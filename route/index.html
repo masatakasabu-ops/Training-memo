@@ -114,6 +114,10 @@ details.setup summary { cursor: pointer; font-weight: 700; }
 .filebtn small { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
 .filebtn.done { border-style: solid; border-color: var(--forest); }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.mapfile { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.mapfile .filebtn:only-child { grid-column: 1 / -1; }
+.filebtn.add { border-color: var(--line); color: var(--muted); font-weight: 500; min-height: 44px; }
+#mapTabs { grid-template-columns: repeat(var(--n, 2), 1fr); margin-bottom: 8px; }
 .icu { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-top: 8px; }
 .icu button {
   flex: none; display: grid; gap: 0; text-align: left; padding: 8px 12px; border-radius: 10px;
@@ -301,7 +305,7 @@ td.top { color: var(--forest); font-weight: 700; }
       </section>
       <section class="stack">
         <h2>地図の画像</h2>
-        <label class="filebtn" id="imgLabel">地図の画像を選ぶ<small>写真・スキャン</small><input type="file" id="imgFile" accept="image/*"></label>
+        <div class="stack" id="mapFiles"></div>
       </section>
       <section class="stack">
         <h2>名前と日付</h2>
@@ -326,6 +330,7 @@ td.top { color: var(--forest); font-weight: 700; }
     <!-- ② 地図合わせ -->
     <div class="view" id="stepMap" hidden>
     <section id="stageHome">
+      <div class="seg" id="mapTabs" role="group" aria-label="地図" hidden></div>
       <div class="stage" id="stage">
         <canvas id="cv"></canvas>
         <div class="empty" id="empty">地図の画像と GPX を読み込むと、ここに重ねて表示します</div>
@@ -405,7 +410,7 @@ td.top { color: var(--forest); font-weight: 700; }
       <summary>画像として書き出す</summary>
       <div class="stack" style="margin-top:12px">
         <button class="ghost" type="button" id="expBtn" disabled>画像を作る</button>
-        <div class="hint" id="expMsg">地図全体を1枚の画像にします。線は地図に描いた太さのまま書き出します。</div>
+        <div class="hint" id="expMsg">地図全体を1枚の画像にします。線は地図に描いた太さのまま書き出します。地図が2枚以上なら、表示中の地図を書き出します。</div>
       </div>
     </details>
 
@@ -478,6 +483,47 @@ let exportFile = null;
 // 保存の単位。id が null なら未保存
 let route = { id: null, title: "", date: "", activityId: null, notes: {}, lap: null };
 let mapBlob = null, trackDirty = false, mapDirty = false;
+
+/* ---------- 地図（マップフリップで2枚以上） ---------- */
+
+// 地図ごとに、画像・合わせ点・位置合わせ・軌跡の画像座標を持つ。表示中の地図（cur）の分は
+// これまでどおり img, W, H, mapBlob, pairs, A, B, history, redoStack, mapDirty と track.ix/iy に入れて使い、切り替えるときに入れ替える。
+// 各コントロールは置いた地図の番号 m を持つ。地図 k に置いた最後のコントロールで地図 k+1 に持ち替えたとみなし、そこで軌跡を分ける
+const newMap = () => ({ img: null, blob: null, W: 2000, H: 2000, pairs: [], A: { re: 1, im: 0 }, B: { re: 0, im: 0 }, history: [], redo: [], dirty: false, ix: null, iy: null });
+let maps = [newMap()], cur = 0;
+
+function stash() {
+  Object.assign(maps[cur], { img, blob: mapBlob, W, H, pairs, A, B, history, redo: redoStack, dirty: mapDirty });
+}
+function loadMap(k) {
+  cur = k;
+  const m = maps[k];
+  ({ img, W, H, pairs, A, B, history } = m); mapBlob = m.blob; redoStack = m.redo; mapDirty = m.dirty;
+  if (track) {
+    if (!m.ix || m.ix.length !== track.n) { m.ix = new Float64Array(track.n); m.iy = new Float64Array(track.n); }
+    track.ix = m.ix; track.iy = m.iy;
+  }
+}
+function useMap(k) { stash(); loadMap(k); }
+
+// 地図 k から k+1 へ持ち替えたコントロール = 地図 k に置いた最後のコントロール
+function flipCtrl(k) { let last = null; for (const c of ctrls) if ((c.m || 0) === k) last = c; return last; }
+// 地図 k に載る軌跡の範囲
+function segRange(k = cur) {
+  let a = ra, b = rb;
+  if (maps.length > 1) {
+    const fin = k > 0 ? flipCtrl(k - 1) : null, fout = k < maps.length - 1 ? flipCtrl(k) : null;
+    if (fin && fin.i > a && fin.i < b) a = fin.i;
+    if (fout && fout.i > a && fout.i < b) b = fout.i;
+  }
+  return [a, b];
+}
+// コースの点（スタート・コントロール・ゴール）の、地図 k の上での位置。置いた地図ならタップした位置、ほかの地図では軌跡の位置
+function pos(p, k) {
+  if (p.q && p.m === k) return p.q;
+  const m = maps[k];
+  return { x: m.ix[p.i], y: m.iy[p.i] };
+}
 
 /* ---------- 単位 ---------- */
 
@@ -580,14 +626,19 @@ function trackFromJson(j) {
 }
 
 function setTrack(tr) {
+  stash();
   track = tr; trackDirty = true;
-  pairs = []; ctrls = []; history = []; redoStack = []; insertAt = -1; mode = "idle"; pendingI = -1; probeI = -1; exportFile = null;
+  ctrls = []; insertAt = -1; mode = "idle"; pendingI = -1; probeI = -1; exportFile = null;
+  for (const m of maps) { m.pairs = []; m.history = []; m.redo = []; }
   ra = 0; rb = tr.n - 1;
   $("rangeA").max = $("rangeB").max = tr.n - 1;
   $("rangeA").value = ra; $("rangeB").value = rb;
   $("gpxLabel").classList.add("done");
   if (!$("raceDate").value && tr.hasTime) $("raceDate").value = ymdOf(tr.raw.tt[0]);
-  computeSpeed(); fitTrack(); fitView(); refresh();
+  computeSpeed();
+  const k0 = cur;
+  maps.forEach((_, k) => { loadMap(k); fitTrack(); stash(); });
+  loadMap(k0); project(); fitView(); refresh();
 }
 
 // 前後 win 秒の移動距離から速度を出す。GPS のぶれで色がちらつくのを抑える
@@ -614,22 +665,55 @@ function computeBands() {
 
 /* ---------- 位置合わせ ---------- */
 
+// すべての地図について、軌跡の各点が画像のどこに来るかを出す
 function project() {
   if (!track) return;
-  const { n, px, py, ix, iy } = track;
-  for (let i = 0; i < n; i++) {
-    ix[i] = A.re * px[i] - A.im * py[i] + B.re;
-    iy[i] = A.im * px[i] + A.re * py[i] + B.im;
+  stash();
+  const { n, px, py } = track;
+  for (const m of maps) {
+    if (!m.ix || m.ix.length !== n) { m.ix = new Float64Array(n); m.iy = new Float64Array(n); }
+    const { A, B, ix, iy } = m;
+    for (let i = 0; i < n; i++) {
+      ix[i] = A.re * px[i] - A.im * py[i] + B.re;
+      iy[i] = A.im * px[i] + A.re * py[i] + B.im;
+    }
+    warpToPairs(m);
   }
+  track.ix = maps[cur].ix; track.iy = maps[cur].iy;
   assignCtrls();
+}
+
+// 3点以上だと、回転・縮尺だけでは合いきらない（地図写真のゆがみ、GPS のずれ）。
+// 合わせ点ごとに残ったずれを、前後の合わせ点の間で時間に沿って少しずつ移していき、どの合わせ点にもぴったり重ねる。
+// GPS のずれは時間とともにゆっくり変わるので、距離ではなく時間で配分する（止まっている間はずれも動かない）
+function warpToPairs({ pairs, ix, iy }) {
+  if (pairs.length < 3) return;
+  const { n, t, hasTime } = track;
+  const at = i => (hasTime && Number.isFinite(t[i]) ? t[i] : i);
+  const ks = pairs.map(p => ({ i: p.i, dx: p.q.x - ix[p.i], dy: p.q.y - iy[p.i] })).sort((a, b) => a.i - b.i);
+  const last = ks[ks.length - 1];
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    while (k < ks.length - 2 && ks[k + 1].i <= i) k++;
+    let dx, dy;
+    if (i <= ks[0].i) ({ dx, dy } = ks[0]);
+    else if (i >= last.i) ({ dx, dy } = last);
+    else {
+      const a = ks[k], b = ks[k + 1], span = at(b.i) - at(a.i);
+      const f = span > 0 ? Math.min(1, Math.max(0, (at(i) - at(a.i)) / span)) : 0;
+      dx = a.dx + (b.dx - a.dx) * f; dy = a.dy + (b.dy - a.dy) * f;
+    }
+    ix[i] += dx; iy[i] += dy;
+  }
 }
 
 // コントロールを通過した時刻を決める。往復や周回で同じ場所を2回以上通ることがあるので、
 // 近くを通った所（候補）をすべて挙げ、コース順に前後しない組み合わせのうち丸からの距離の合計が最小のものを選ぶ。
 // 手で選んだ通過（fix）があればそれを優先する
 const CTRL_NEAR_M = 35;
-function ctrlCandidates(q) {
-  const { ix, iy } = track, thr = CTRL_NEAR_M * Math.hypot(A.re, A.im), out = [];
+// 候補は、そのコントロールを置いた地図の上での軌跡との距離で探す
+function ctrlCandidates(c) {
+  const m = maps[c.m || 0] || maps[0], q = c.q, { ix, iy } = m, thr = CTRL_NEAR_M * Math.hypot(m.A.re, m.A.im), out = [];
   let zone = null, gi = ra, gd = Infinity;
   for (let i = ra; i <= rb; i++) {
     const dd = Math.hypot(ix[i] - q.x, iy[i] - q.y);
@@ -642,9 +726,10 @@ function ctrlCandidates(q) {
 }
 function assignCtrls() {
   if (!track) return;
-  const scale = Math.hypot(A.re, A.im);
+  stash();
+  const scaleOf = c => { const m = maps[c.m || 0] || maps[0]; return Math.hypot(m.A.re, m.A.im); };
   const cands = ctrls.map(c => {
-    const all = ctrlCandidates(c.q);
+    const all = ctrlCandidates(c);
     c.cands = all.map(x => x.i);
     const f = c.fix != null && all.find(x => Math.abs(x.i - c.fix) <= 3);
     return f ? [f] : all;
@@ -664,18 +749,18 @@ function assignCtrls() {
   let j = -1;
   if (m) cost[m - 1].forEach((v, x) => { if (cands[m - 1][x].i < rb && (j < 0 || v < cost[m - 1][j])) j = x; });
   if (j >= 0 && Number.isFinite(cost[m - 1][j])) {
-    for (let k = m - 1; k >= 0; k--) { const c = cands[k][j]; ctrls[k].i = c.i; ctrls[k].off = c.d / scale; j = k ? from[k][j] : -1; }
+    for (let k = m - 1; k >= 0; k--) { const c = cands[k][j]; ctrls[k].i = c.i; ctrls[k].off = c.d / scaleOf(ctrls[k]); j = k ? from[k][j] : -1; }
   } else {
     // 順番どおりに並ぶ組み合わせがなければ、それぞれいちばん近い所（レッグには⚠が出る）
-    ctrls.forEach((c, k) => { const b = cands[k].reduce((a, x) => (x.d < a.d ? x : a)); c.i = b.i; c.off = b.d / scale; });
+    ctrls.forEach((c, k) => { const b = cands[k].reduce((a, x) => (x.d < a.d ? x : a)); c.i = b.i; c.off = b.d / scaleOf(c); });
   }
 }
 
 // 合わせ点がないときは北を上にして画像の8割に収める
 function fitTrack() {
-  const { px, py } = track;
+  const { px, py } = track, [a, b] = segRange();
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (let i = 0; i < track.n; i++) {
+  for (let i = a; i <= b; i++) {
     x0 = Math.min(x0, px[i]); x1 = Math.max(x1, px[i]); y0 = Math.min(y0, py[i]); y1 = Math.max(y1, py[i]);
   }
   const s = 0.8 * Math.min(W / Math.max(x1 - x0, 1), H / Math.max(y1 - y0, 1));
@@ -706,28 +791,51 @@ function solvePairs() {
 }
 
 function alignText() {
+  const t = alignText1();
+  if (maps.length < 2 || !track) return t;
+  // マップフリップ：どこで持ち替えたかを添える
+  const no = c => ctrls.indexOf(c) + 1, fin = cur > 0 ? flipCtrl(cur - 1) : null, fout = cur < maps.length - 1 ? flipCtrl(cur) : null;
+  const span = `${fin ? `${no(fin)}番` : "スタート"}〜${cur === maps.length - 1 ? "ゴール" : fout ? `${no(fout)}番` : "？"}`;
+  const tip = cur < maps.length - 1 && !fout ? `（この地図で最後のコントロールまで置くと、そこで地図${cur + 2}に切り替えます）` : "";
+  return `地図${cur + 1}：${span}${tip} ・ ${t}`;
+}
+function alignText1() {
   if (!track) return "軌跡をタップでその地点の速さ。2本指で拡大。";
   if (!img) return "地図の画像を読み込むと、位置を合わせられます。";
   if (!pairs.length) return "「合わせ点」で、地図と2〜3か所を離して合わせます。";
   if (pairs.length === 1) return "合わせ点 1 ・ あと1か所で向きと縮尺も合います";
   const scale = Math.hypot(A.re, A.im);
-  const rms = Math.sqrt(pairs.reduce((s, p) => s + (track.ix[p.i] - p.q.x) ** 2 + (track.iy[p.i] - p.q.y) ** 2, 0) / pairs.length);
-  return `合わせ点 ${pairs.length} ・ ずれ ${Math.round(rms / scale)}m`;
+  // 補正する前（回転・縮尺・移動だけ）のずれ。大きければ、どこかの合わせ点の置き間違いかもしれない
+  const { px, py } = track;
+  const rms = Math.sqrt(pairs.reduce((s, p) => s + (A.re * px[p.i] - A.im * py[p.i] + B.re - p.q.x) ** 2 + (A.im * px[p.i] + A.re * py[p.i] + B.im - p.q.y) ** 2, 0) / pairs.length);
+  return pairs.length >= 3 ? `合わせ点 ${pairs.length} ・ 各点に合わせて補正（補正前のずれ ${Math.round(rms / scale)}m）` : `合わせ点 ${pairs.length} ・ ずれ ${Math.round(rms / scale)}m`;
 }
 
 /* ---------- レッグ ---------- */
 
 // コース順に スタート→1→…→ゴール で区切る
-function controls() {
+// m は点を置いた地図。スタートは最初の地図、ゴールは最後の地図
+function course() {
   return [
-    { key: "S", i: ra, label: "S", x: track.ix[ra], y: track.iy[ra] },
-    ...ctrls.map((c, k) => ({ key: c.id, i: c.i, label: String(k + 1), x: c.q.x, y: c.q.y })),
-    { key: "F", i: rb, label: "F", x: track.ix[rb], y: track.iy[rb] },
+    { key: "S", i: ra, label: "S", m: 0 },
+    ...ctrls.map((c, k) => ({ key: c.id, i: c.i, label: String(k + 1), m: c.m || 0, q: c.q })),
+    { key: "F", i: rb, label: "F", m: maps.length - 1 },
   ];
 }
+// レッグは行き先のコントロールがある地図に載る（持ち替えたコントロールからのレッグは次の地図）
 function legs() {
-  const cs = controls();
-  return cs.slice(0, -1).map((a, k) => ({ from: a, to: cs[k + 1], key: `${a.key}>${cs[k + 1].key}`, name: `${a.label} → ${cs[k + 1].label}`, bad: !(cs[k + 1].i > a.i) }));
+  const cs = course();
+  return cs.slice(0, -1).map((a, k) => { const b = cs[k + 1]; return { from: a, to: b, m: b.m, key: `${a.key}>${b.key}`, name: `${a.label} → ${b.label}`, bad: !(b.i > a.i) }; });
+}
+// 地図 k に描くコースの記号。持ち替えたコントロールは、次の地図ではスタートの三角で描く（実際の地図と同じ）
+function coursePoints(k) {
+  const cs = course(), pts = [];
+  cs.forEach((p, j) => {
+    const next = cs[j + 1];
+    if (p.m === k) pts.push({ ...p, ...pos(p, k), shape: p.key === "S" ? "start" : p.key === "F" ? "finish" : "ctrl" });
+    else if (p.m === k - 1 && next && next.m === k) pts.push({ ...p, ...pos(p, k), shape: "start" });
+  });
+  return pts;
 }
 
 function legStats(a, b) {
@@ -802,7 +910,8 @@ function strokeTrack(c, lw, a, b, faint) {
 
 // コース図の記号：スタートの三角、コントロールの円と番号、ゴールの二重丸、レッグの線
 function drawCourse(c, r, w, opts = {}) {
-  const cs = controls(), col = opts.color || OVERPRINT, only = opts.only;
+  const cs = coursePoints(cur), col = opts.color || OVERPRINT, only = opts.only;
+  if (!cs.length) return;
   c.strokeStyle = col; c.lineWidth = w; c.lineCap = "round";
   for (let k = 0; k < cs.length - 1; k++) {
     const a = cs[k], b = cs[k + 1], dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
@@ -813,11 +922,11 @@ function drawCourse(c, r, w, opts = {}) {
   c.globalAlpha = 1;
   cs.forEach((p, k) => {
     c.beginPath();
-    if (p.key === "S") {
-      const n = cs[1], ang = Math.atan2(n.y - p.y, n.x - p.x);
+    if (p.shape === "start") {
+      const n = cs[k + 1] || p, ang = Math.atan2(n.y - p.y, n.x - p.x);
       for (let j = 0; j < 3; j++) { const a = ang + j * 2 * Math.PI / 3; c[j ? "lineTo" : "moveTo"](p.x + r * 1.25 * Math.cos(a), p.y + r * 1.25 * Math.sin(a)); }
       c.closePath(); c.stroke();
-    } else if (p.key === "F") {
+    } else if (p.shape === "finish") {
       c.arc(p.x, p.y, r, 0, Math.PI * 2); c.stroke();
       c.beginPath(); c.arc(p.x, p.y, r * .7, 0, Math.PI * 2); c.stroke();
     } else {
@@ -842,7 +951,7 @@ function courseR() {
 function drawScene(c, lw) {
   drawMap(c);
   if (!track) return;
-  strokeTrack(c, lw, ra, rb);
+  strokeTrack(c, lw, ...segRange());
   const r = courseR();
   drawCourse(c, r, r * .13, { labels: false });
 }
@@ -870,8 +979,9 @@ function render() {
   // 拡大（ピンチアウト）しても全体表示のときより太くはしない。縮小したときは地図と一緒に細くする
   // 画面ではスマホの全体表示でも見えるよう、書き出し（lineW）より太めの基準にする
   const lw = Number($("lw").value) * Math.max(W, H) / 400 * Math.min(view.k, fitScale()) / view.k;
-  if (zl) { strokeTrack(ctx, lw, ra, rb, true); strokeTrack(ctx, lw, zl.from.i, zl.to.i); }
-  else strokeTrack(ctx, lw, ra, rb);
+  const [sa, sb] = segRange();
+  if (zl) { strokeTrack(ctx, lw, sa, sb, true); strokeTrack(ctx, lw, zl.from.i, zl.to.i); }
+  else strokeTrack(ctx, lw, sa, sb);
   drawCourse(ctx, 13 * u, 2.2 * u, { only: zl?.key });
   // 合わせ点は青い十字。軌跡のその点と細い線で結ぶ（ずれの確認用）。画像の書き出しには描かない
   const { ix, iy } = track;
@@ -965,9 +1075,9 @@ cv.addEventListener("wheel", e => {
 }, { passive: false });
 
 function nearestPoint(sx, sy) {
-  const { ix, iy } = track;
+  const { ix, iy } = track, [a, b] = segRange();
   let best = -1, bd = Infinity;
-  for (let i = ra; i <= rb; i++) {
+  for (let i = a; i <= b; i++) {
     const dd = (ix[i] * view.k + view.x - sx) ** 2 + (iy[i] * view.k + view.y - sy) ** 2;
     if (dd < bd) { bd = dd; best = i; }
   }
@@ -975,6 +1085,10 @@ function nearestPoint(sx, sy) {
 }
 
 const newId = p => p + Math.random().toString(36).slice(2, 8);
+// 地図ごとにまとまった順（地図1のコントロール → 地図2 …）に保つ。sort は同じ地図の中の順を変えない
+function sortCtrls() { ctrls.sort((a, b) => (a.m || 0) - (b.m || 0)); }
+// 表示中の地図に次に置くコントロールの位置（その地図の最後の次）
+function ctrlEnd() { let k = 0; ctrls.forEach((c, j) => { if ((c.m || 0) <= cur) k = j + 1; }); return k; }
 
 function tap(sx, sy) {
   if (!track) return;
@@ -989,8 +1103,9 @@ function tap(sx, sy) {
   if (mode === "pickCtrl") {
     // 合わせ点の近くをタップしたら、その位置をコントロールにする
     const near = pairs.find(p => Math.hypot(p.q.x * view.k + view.x - sx, p.q.y * view.k + view.y - sy) < 30);
-    const c = { id: newId("c"), q: near ? { ...near.q } : q };
-    if (insertAt >= 0) { ctrls.splice(insertAt, 0, c); insertAt = -1; } else ctrls.push(c);
+    const c = { id: newId("c"), q: near ? { ...near.q } : q, m: cur };
+    if (insertAt >= 0) { ctrls.splice(insertAt, 0, c); insertAt = -1; } else ctrls.splice(ctrlEnd(), 0, c);
+    sortCtrls();
     record({ type: "ctrl", id: c.id });
     assignCtrls(); refresh();
     return;
@@ -1021,7 +1136,7 @@ function showProbe() {
 function bubbleText() {
   if (mode === "pickTrack") return "合わせ点：軌跡の上の、場所がはっきりした点をタップ";
   if (mode === "pickMap") return "合わせ点：その点が地図上で本当はどこかをタップ";
-  if (mode === "pickCtrl") return `コントロール${(insertAt >= 0 ? insertAt : ctrls.length) + 1}：地図の丸の中心をタップ（終わったら「完了」）`;
+  if (mode === "pickCtrl") return `コントロール${(insertAt >= 0 ? insertAt : ctrlEnd()) + 1}：地図の丸の中心をタップ（終わったら「完了」）`;
   return "";
 }
 function bubble(text) {
@@ -1058,8 +1173,10 @@ $("undoBtn").addEventListener("click", () => {
     if (k >= 0) { redoStack.push({ type: h.type, item: list.splice(k, 1)[0], index: k }); done = true; relayout(h.type); }
   }
   if (!done) {
-    const type = ctrls.length ? "ctrl" : pairs.length ? "pair" : null, list = type === "pair" ? pairs : ctrls;
-    if (type) { redoStack.push({ type, item: list.pop(), index: list.length }); relayout(type); }
+    // 記録がない（開き直した）ときは、この地図の最後のコントロール、なければ最後の合わせ点
+    const kc = ctrls.map(c => c.m || 0).lastIndexOf(cur);
+    if (kc >= 0) { redoStack.push({ type: "ctrl", item: ctrls.splice(kc, 1)[0], index: kc }); relayout("ctrl"); }
+    else if (pairs.length) { redoStack.push({ type: "pair", item: pairs.pop(), index: pairs.length }); relayout("pair"); }
   }
   refresh();
 });
@@ -1258,7 +1375,7 @@ function renderCtrlList() {
   $("ctrlTarget").textContent = codes.length ? (codes.length === ctrls.length ? `✓ ラップと同じ${codes.length}個です。` : `ラップのコントロールは${codes.length}個です（今${ctrls.length}個）。同じ数にするとラップと結び付きます。`) : "";
   $("ctrlTarget").className = "hint" + (codes.length && codes.length === ctrls.length ? " ok" : "");
   // たたんでいても要点が分かるよう、見出しに個数とラップとの一致を出す
-  const far = track ? ctrls.filter(c => c.off > CTRL_NEAR_M).length : 0;
+  const far = track ? ctrls.filter(c => c.off > CTRL_NEAR_M).length : 0, multi = maps.length > 1;
   $("ctrlSum").textContent = `${ctrls.length}個` + (codes.length ? (codes.length === ctrls.length ? " ✓ラップと同じ" : ` ／ ラップは${codes.length}個`) : "")
     + (far ? ` ・ 位置を確認${far}個` : "");
   $("ctrlSum").className = "sumnote" + (far || (codes.length && codes.length !== ctrls.length) ? " err" : codes.length ? " ok" : "");
@@ -1266,7 +1383,8 @@ function renderCtrlList() {
   box.innerHTML = ctrls.map((c, k) => {
     const far = c.off > CTRL_NEAR_M, t = track.hasTime && c.i >= 0 ? `通過 ${fmtDur(track.t[c.i] - track.t[ra])}` : "";
     const n = c.cands?.length || 0, at = n > 1 ? c.cands.findIndex(i => Math.abs(i - c.i) <= 3) + 1 : 0;
-    return `<div class="cl"><b>${k + 1}</b><span class="${far ? "warn" : ""}">${[codes[k] ? `番号${esc(codes[k])}` : "", t, `軌跡から${Math.round(c.off)}m`].filter(Boolean).join(" ・ ")}${far ? " ← 位置を確認" : ""}${n > 1 ? `<br><button class="ghost" type="button" data-alt="${k}">別の通過（${at}/${n}回目）</button>` : ""}</span>
+    const flip = multi && flipCtrl(c.m || 0) === c && (c.m || 0) < maps.length - 1 ? ` ・ ここで地図${(c.m || 0) + 2}へ` : "";
+    return `<div class="cl"><b>${k + 1}</b><span class="${far ? "warn" : ""}">${[multi ? `地図${(c.m || 0) + 1}` : "", codes[k] ? `番号${esc(codes[k])}` : "", t, `軌跡から${Math.round(c.off)}m`].filter(Boolean).join(" ・ ")}${flip}${far ? " ← 位置を確認" : ""}${n > 1 ? `<br><button class="ghost" type="button" data-alt="${k}">別の通過（${at}/${n}回目）</button>` : ""}</span>
       <button class="ghost" type="button" data-ins="${k}">前に追加</button><button class="ghost" type="button" data-del="${k}">削除</button></div>`;
   }).join("");
   // 同じ場所を何度か通ったときは、どの通過をコントロールとするか手で選べる
@@ -1284,8 +1402,8 @@ $("pairsToCtrl").addEventListener("click", () => {
   const used = new Set(ctrls.map(c => `${c.q.x},${c.q.y}`));
   for (const p of [...pairs].sort((a, b) => a.i - b.i)) {
     if (used.has(`${p.q.x},${p.q.y}`)) continue;
-    const c = { id: newId("c"), q: { ...p.q } };
-    ctrls.push(c); record({ type: "ctrl", id: c.id });
+    const c = { id: newId("c"), q: { ...p.q }, m: cur };
+    ctrls.splice(ctrlEnd(), 0, c); record({ type: "ctrl", id: c.id });
   }
   assignCtrls(); refresh();
 });
@@ -1302,6 +1420,7 @@ $("smooth").addEventListener("input", () => { refreshSliderLabels(); computeSpee
 for (const id of ["lw", "op", "alpha", "halo"]) $(id).addEventListener("input", () => { refreshSliderLabels(); exportFile = null; syncExport(); draw(); });
 
 function refresh() {
+  renderMapTabs();
   bubble(bubbleText());
   $("pairBtn").disabled = !(track && img);
   $("ctrlBtn").disabled = !track;
@@ -1323,9 +1442,9 @@ function loadImage(src) {
 function canvasBlob(c, type, q) { return new Promise(r => c.toBlob(r, type, q)); }
 
 // 大きな写真は長い辺 MAX_MAP px に縮めてから使う（保存容量と描画の重さを抑える）
-$("imgFile").addEventListener("change", async e => {
-  const f = e.target.files[0];
-  if (!f) return;
+// 地図 k の画像を選ぶ（k が今の枚数なら、マップフリップ後の地図として足す）。
+// 選び直すと、その地図の合わせ点とコントロールは置き直しになる
+async function setMapImage(k, f) {
   try {
     let im = await loadImage(URL.createObjectURL(f)), blob = f;
     const s = Math.min(1, MAX_MAP / Math.max(im.naturalWidth, im.naturalHeight));
@@ -1336,14 +1455,51 @@ $("imgFile").addEventListener("change", async e => {
       blob = await canvasBlob(c, "image/jpeg", .88);
       im = await loadImage(URL.createObjectURL(blob));
     }
+    stash();
+    if (k >= maps.length) maps.push(newMap());
+    loadMap(k);
     img = im; W = im.naturalWidth; H = im.naturalHeight; mapBlob = blob; mapDirty = true;
-    $("imgLabel").classList.add("done");
-    pairs = []; ctrls = []; history = []; redoStack = []; insertAt = -1; mode = "idle"; pendingI = -1;
+    pairs = []; history = []; redoStack = []; insertAt = -1; mode = "idle"; pendingI = -1;
+    ctrls = ctrls.filter(c => (c.m || 0) !== k);
     if (track) fitTrack();
-    fitView(); refresh();
-    loadMsg(`地図：${f.name}（${W}×${H}px、${Math.round(blob.size / 1024)}KB）`);
+    fitView(); renderMapFiles(); refresh();
+    loadMsg(`地図${maps.length > 1 ? k + 1 : ""}：${f.name}（${W}×${H}px、${Math.round(blob.size / 1024)}KB）`);
   } catch { loadMsg("画像を読めませんでした。JPEG か PNG で試してください。", true); }
-});
+}
+
+// 2枚目からの地図を外す。その地図に置いたコントロールも消える
+function removeMap(k) {
+  stash();
+  ctrls = ctrls.filter(c => (c.m || 0) !== k).map(c => ((c.m || 0) > k ? { ...c, m: c.m - 1 } : c));
+  maps.splice(k, 1);
+  loadMap(Math.min(cur === k ? 0 : cur > k ? cur - 1 : cur, maps.length - 1));
+  project(); renderMapFiles(); refresh();
+}
+
+function renderMapFiles() {
+  stash();
+  const many = maps.length > 1, box = $("mapFiles");
+  box.innerHTML = maps.map((m, k) => {
+    const name = many ? `地図${k + 1}` : "地図";
+    return `<div class="mapfile"><label class="filebtn ${m.img ? "done" : ""}">${m.img ? `${name}：${m.W}×${m.H}px（選び直す）` : `${name}の画像を選ぶ`}<small>${k ? "マップフリップの後の地図" : "写真・スキャン"}</small><input type="file" accept="image/*" data-map="${k}"></label>${k ? `<button class="ghost" type="button" data-rmmap="${k}">外す</button>` : ""}</div>`;
+  }).join("") + (maps[maps.length - 1].img ? `<label class="filebtn add">＋ ${maps.length + 1}枚目の地図を足す<small>マップフリップ（途中で地図を持ち替える）があるとき</small><input type="file" accept="image/*" data-map="${maps.length}"></label>` : "");
+  box.querySelectorAll("[data-map]").forEach(inp => inp.addEventListener("change", e => { const f = e.target.files[0]; if (f) setMapImage(Number(inp.dataset.map), f); }));
+  box.querySelectorAll("[data-rmmap]").forEach(b => b.addEventListener("click", () => removeMap(Number(b.dataset.rmmap))));
+}
+
+function renderMapTabs() {
+  const box = $("mapTabs");
+  box.hidden = maps.length < 2;
+  if (box.hidden) return;
+  box.style.setProperty("--n", maps.length);
+  box.innerHTML = maps.map((_, k) => `<button type="button" data-tab="${k}" aria-pressed="${k === cur}">地図${k + 1}</button>`).join("");
+  box.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
+    const k = Number(b.dataset.tab);
+    if (k === cur) return;
+    mode = "idle"; pendingI = -1; probeI = -1; insertAt = -1;
+    useMap(k); fitView(); refresh();
+  }));
+}
 
 $("gpxFile").addEventListener("change", async e => {
   const f = e.target.files[0];
@@ -1459,8 +1615,8 @@ function drawLegend(c, cw, ch) {
   const fs = Math.max(14, Math.round(Math.min(cw, ch) / 45)), pad_ = fs * .7, row = fs * 1.5;
   const rows = [];
   for (let b = th.length; b >= 0; b--) rows.push([cols[b], bandLabel(b), track.hasTime ? `${Math.round(time[b] / total * 100)}%` : ""]);
-  const { t, d, hasTime } = track;
-  const title = `${$("title").value || track.name}  ${((d[rb] - d[ra]) / 1000).toFixed(2)}km${hasTime ? "  " + fmtDur(t[rb] - t[ra]) : ""}`;
+  const { t, d, hasTime } = track, [sa, sb] = segRange();
+  const title = `${$("title").value || track.name}${maps.length > 1 ? ` 地図${cur + 1}` : ""}  ${((d[sb] - d[sa]) / 1000).toFixed(2)}km${hasTime ? "  " + fmtDur(t[sb] - t[sa]) : ""}`;
   c.font = `700 ${fs}px "Zen Kaku Gothic New", "Hiragino Sans", sans-serif`;
   if (colorMode === "grad") {
     // 題名の下にグラデーションの帯と、両端のペース
@@ -1515,7 +1671,7 @@ async function makeImage() {
     const blob = await canvasBlob(c, type, .92);
     if (!blob) throw new Error("画像を作れませんでした。地図の画像が大きすぎるかもしれません。");
     const base = ($("title").value || track.name).replace(/[\\/:*?"<>|\s（）]+/g, "_").replace(/^_+|_+$/g, "") || "route";
-    exportFile = new File([blob], `${base}_速度.${img ? "jpg" : "png"}`, { type });
+    exportFile = new File([blob], `${base}${maps.length > 1 ? `_地図${cur + 1}` : ""}_速度.${img ? "jpg" : "png"}`, { type });
     const canShare = !!navigator.canShare?.({ files: [exportFile] });
     btn.textContent = canShare ? "保存・共有する" : "画像を保存";
     $("expMsg").textContent = `${exportFile.name}（${c.width}×${c.height}px、${Math.round(blob.size / 1024)}KB）`;
@@ -1597,16 +1753,27 @@ function syncSave() {
   document.querySelector('[data-step="map"]').disabled = !track;
 }
 
+// 1枚目の地図は前と同じ場所（pairs, A, B, W, H）に、2枚以上なら maps にも全部入れる
 function collectSettings() {
-  return { lap: route.lap, pairs, ctrls: ctrls.map(c => ({ id: c.id, q: c.q, ...(c.fix != null ? { fix: c.fix } : {}) })), ra, rb, th: bandTh, colorMode, gradFast, gradSlow, colorOverride, A, B, W, H, smooth: +$("smooth").value, lw: +$("lw").value, op: +$("op").value, alpha: +$("alpha").value, halo: $("halo").checked };
+  stash();
+  const m0 = maps[0];
+  return { lap: route.lap, pairs: m0.pairs, ctrls: ctrls.map(c => ({ id: c.id, q: c.q, ...(c.m ? { m: c.m } : {}), ...(c.fix != null ? { fix: c.fix } : {}) })), ra, rb, th: bandTh, colorMode, gradFast, gradSlow, colorOverride, A: m0.A, B: m0.B, W: m0.W, H: m0.H,
+    ...(maps.length > 1 ? { maps: maps.map(m => ({ W: m.W, H: m.H, A: m.A, B: m.B, pairs: m.pairs, img: !!m.img })) } : {}),
+    smooth: +$("smooth").value, lw: +$("lw").value, op: +$("op").value, alpha: +$("alpha").value, halo: $("halo").checked };
 }
+// 保存先のファイル名。1枚目は前と同じ「map」
+const mapFile = k => (k ? `map${k + 1}` : "map");
 
+// 一覧の小さな絵は1枚目の地図で
 async function makeThumb() {
+  const k0 = cur;
+  useMap(0);
   const s = 480 / Math.max(W, H), c = document.createElement("canvas");
   c.width = Math.round(W * s); c.height = Math.round(H * s);
   const x = c.getContext("2d");
   x.setTransform(s, 0, 0, s, 0, 0);
-  drawMap(x); strokeTrack(x, 2.5 / s, ra, rb); drawCourse(x, 6 / s, 1.2 / s, { labels: false });
+  drawMap(x); strokeTrack(x, 2.5 / s, ...segRange()); drawCourse(x, 6 / s, 1.2 / s, { labels: false });
+  useMap(k0);
   return canvasBlob(c, "image/jpeg", .8);
 }
 
@@ -1621,18 +1788,24 @@ $("saveBtn").addEventListener("click", async () => {
   try {
     route.title = $("title").value.trim() || track.name;
     route.date = $("raceDate").value || null;
-    const row = { title: route.title, race_date: route.date, activity_id: route.activityId, settings: collectSettings(), summary: routeSummary(), has_map: !!img, updated_at: new Date().toISOString() };
+    const row = { title: route.title, race_date: route.date, activity_id: route.activityId, settings: collectSettings(), summary: routeSummary(), has_map: !!maps[0].img, updated_at: new Date().toISOString() };
     if (!route.id) {
       const { data, error } = await sb.from("routes").insert({ ...row, notes: {} }).select("id").single();
       if (error) throw new Error(error.message);
-      route.id = data.id; trackDirty = true; mapDirty = !!img;
+      route.id = data.id; trackDirty = true;
+      for (const m of maps) m.dirty = !!m.img;
+      mapDirty = maps[cur].dirty;
     } else {
       const { error } = await sb.from("routes").update(row).eq("id", route.id);
       if (error) throw new Error(error.message);
     }
     const dir = folder(route.id);
     if (trackDirty) { await upload(dir + "track.json", new Blob([trackJson(track)], { type: "application/json" }), "application/json"); trackDirty = false; }
-    if (mapDirty && mapBlob) { await upload(dir + "map", mapBlob, mapBlob.type || "image/jpeg"); mapDirty = false; }
+    stash();
+    for (const [k, m] of maps.entries()) {
+      if (m.dirty && m.blob) { await upload(dir + mapFile(k), m.blob, m.blob.type || "image/jpeg"); m.dirty = false; }
+    }
+    mapDirty = false;
     await upload(dir + "thumb.jpg", await makeThumb(), "image/jpeg");
     msg.textContent = "";
     openReview();
@@ -1681,14 +1854,19 @@ async function openRoute(id) {
     const tj = await sb.storage.from("maps").download(dir + "track.json");
     if (tj.error) throw new Error("軌跡のファイルが見つかりません。");
     const tr = trackFromJson(JSON.parse(await tj.data.text()));
-    let im = null, blob = null;
-    if (row.has_map) {
-      const m = await sb.storage.from("maps").download(dir + "map");
-      if (!m.error) { blob = m.data; im = await loadImage(URL.createObjectURL(blob)); }
-    }
     const s = row.settings || {};
-    img = im; mapBlob = blob; W = s.W || im?.naturalWidth || 2000; H = s.H || im?.naturalHeight || 2000;
-    track = tr; trackDirty = false; mapDirty = false;
+    // 地図が1枚だけのとき（マップフリップ対応の前に保存したものも）は、上の段の pairs, A, B, W, H がその地図
+    const specs = s.maps || [{ W: s.W, H: s.H, A: s.A, B: s.B, pairs: s.pairs || [], img: row.has_map }];
+    const loaded = await Promise.all(specs.map(async (sp, k) => {
+      const m = Object.assign(newMap(), { W: sp.W || 2000, H: sp.H || 2000, A: sp.A, B: sp.B, pairs: sp.pairs || [] });
+      if (sp.img) {
+        const r = await sb.storage.from("maps").download(dir + mapFile(k));
+        if (!r.error) { m.blob = r.data; m.img = await loadImage(URL.createObjectURL(m.blob)); m.W = sp.W || m.img.naturalWidth; m.H = sp.H || m.img.naturalHeight; }
+      }
+      return m;
+    }));
+    maps = loaded; track = tr; loadMap(0);
+    trackDirty = false;
     route = { id, title: row.title, date: row.race_date || "", activityId: row.activity_id, notes: row.notes || {} };
     applySettings(s);
     msg.textContent = "";
@@ -1697,34 +1875,39 @@ async function openRoute(id) {
 }
 
 function applySettings(s) {
-  pairs = s.pairs || []; bandTh = s.th || bandTh; colorOverride = s.colorOverride || {};
+  bandTh = s.th || bandTh; colorOverride = s.colorOverride || {};
   // 色の塗り方が保存されていない（グラデーション追加前の）ものは区切り式のまま
   colorMode = s.colorMode || "band"; gradFast = s.gradFast || gradFast; gradSlow = s.gradSlow || gradSlow;
   th = colorMode === "grad" ? gradThresholds() : bandTh;
   route.lap = s.lap || null; lapAll = null;
   // コントロールを分ける前に保存したものは、合わせ点を通った順にコントロールとみなす（反省の対応を保つ）
-  ctrls = s.ctrls ? s.ctrls.map(c => ({ id: c.id, q: { ...c.q }, fix: c.fix }))
-    : [...pairs].sort((a, b) => a.i - b.i).map(p => ({ id: p.id, q: { ...p.q } }));
-  history = []; redoStack = []; insertAt = -1;
+  ctrls = s.ctrls ? s.ctrls.map(c => ({ id: c.id, q: { ...c.q }, fix: c.fix, m: c.m || 0 }))
+    : [...(s.pairs || [])].sort((a, b) => a.i - b.i).map(p => ({ id: p.id, q: { ...p.q }, m: 0 }));
+  insertAt = -1;
   ra = s.ra ?? 0; rb = Math.min(s.rb ?? track.n - 1, track.n - 1);
   for (const [id, v] of [["smooth", s.smooth], ["lw", s.lw], ["op", s.op], ["alpha", s.alpha ?? 100]]) if (v != null) $(id).value = v;
   if (s.halo != null) $("halo").checked = s.halo;
   $("rangeA").max = $("rangeB").max = track.n - 1; $("rangeA").value = ra; $("rangeB").value = rb;
   $("title").value = route.title; $("raceDate").value = route.date || "";
-  $("imgLabel").classList.toggle("done", !!img); $("gpxLabel").classList.add("done");
+  $("gpxLabel").classList.add("done");
   $("bounds").value = boundsText();
   mode = "idle"; pendingI = -1; probeI = -1;
   refreshSliderLabels(); computeSpeed(); applyColorMode();
-  if (s.A && s.B) { A = s.A; B = s.B; project(); } else solvePairs();
+  // 位置合わせが保存されていない地図は合わせ点から出し直す
+  const redo = maps.map(m => !(m.A && m.B));
+  maps.forEach((m, k) => { if (redo[k]) { m.A = { re: 1, im: 0 }; m.B = { re: 0, im: 0 }; } });
+  maps.forEach((m, k) => { if (redo[k]) { loadMap(k); solvePairs(); stash(); } });
+  loadMap(0); project(); renderMapFiles();
 }
 
 function resetRoute() {
   route = { id: null, title: "", date: "", activityId: null, notes: {}, lap: null };
-  lapAll = null; img = null; track = null; pairs = []; ctrls = []; history = []; redoStack = []; insertAt = -1; mapBlob = null; W = H = 2000; trackDirty = mapDirty = false;
+  lapAll = null; track = null; ctrls = []; insertAt = -1; trackDirty = false;
+  maps = [newMap()]; loadMap(0);
   mode = "idle"; pendingI = -1; probeI = -1;
   colorMode = "grad"; applyColorMode();   // 新しく作るときはグラデーションから
-  $("title").value = ""; $("raceDate").value = ""; $("imgFile").value = ""; $("gpxFile").value = "";
-  $("imgLabel").classList.remove("done"); $("gpxLabel").classList.remove("done");
+  $("title").value = ""; $("raceDate").value = ""; $("gpxFile").value = "";
+  $("gpxLabel").classList.remove("done"); renderMapFiles();
   for (const b of $("icuList").children) b.setAttribute("aria-pressed", "false");
   loadMsg(""); $("saveMsg").textContent = "";
 }
@@ -1994,9 +2177,10 @@ function buildLegBody(det, l, lr) {
 }
 
 // レッグの軌跡と両端のコントロールを囲む範囲（4:3、余白つき）
+// レッグの地図（l.m）を表示中にしてから呼ぶ
 function legBox(l, aspect = 4 / 3) {
-  const { ix, iy } = track;
-  let x0 = Math.min(l.from.x, l.to.x), x1 = Math.max(l.from.x, l.to.x), y0 = Math.min(l.from.y, l.to.y), y1 = Math.max(l.from.y, l.to.y);
+  const { ix, iy } = track, a = pos(l.from, l.m), b = pos(l.to, l.m);
+  let x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
   for (let i = l.from.i; i <= l.to.i; i++) { x0 = Math.min(x0, ix[i]); x1 = Math.max(x1, ix[i]); y0 = Math.min(y0, iy[i]); y1 = Math.max(y1, iy[i]); }
   const minSize = Math.max(W, H) * .08;
   let w = Math.max(x1 - x0, minSize) * 1.3, h = Math.max(y1 - y0, minSize) * 1.3;
@@ -2006,15 +2190,17 @@ function legBox(l, aspect = 4 / 3) {
 }
 
 function drawCrop(c, l) {
-  const dpr = window.devicePixelRatio || 1, cw = c.clientWidth || 320;
+  const dpr = window.devicePixelRatio || 1, cw = c.clientWidth || 320, k0 = cur;
   c.width = Math.round(cw * dpr); c.height = Math.round(cw * .75 * dpr);
+  useMap(l.m);
   const [x0, y0, x1] = legBox(l), s = c.width / (x1 - x0), x = c.getContext("2d"), px = dpr / s;
   x.fillStyle = "#ffffff"; x.fillRect(0, 0, c.width, c.height);
   x.setTransform(s, 0, 0, s, -x0 * s, -y0 * s);
   drawMap(x);
-  strokeTrack(x, Number($("lw").value) * px, ra, rb, true);
+  strokeTrack(x, Number($("lw").value) * px, ...segRange(), true);
   strokeTrack(x, Number($("lw").value) * px, l.from.i, l.to.i);
   drawCourse(x, 13 * px, 2.2 * px, { only: l.key });
+  useMap(k0);
 }
 
 function renderReviewSummary() {
@@ -2055,7 +2241,7 @@ $("rvDelete").addEventListener("click", async () => {
   clearTimeout(delArmed); delArmed = 0; b.classList.remove("armed"); b.textContent = "削除";
   clearTimeout(saveTimer); saveTimer = 0;
   const dir = folder(route.id);
-  await sb.storage.from("maps").remove([dir + "track.json", dir + "map", dir + "thumb.jpg"]);
+  await sb.storage.from("maps").remove([dir + "track.json", dir + "thumb.jpg", ...[0, 1, 2, 3, 4].map(k => dir + mapFile(k))]);
   const { error } = await sb.from("routes").delete().eq("id", route.id);
   if (error) { saveState(`削除できませんでした：${error.message}`); return; }
   resetRoute(); showView("list"); loadList();
@@ -2068,6 +2254,7 @@ let zoomLeg = null;
 function fitLeg(l) { const [x0, y0, x1, y1] = legBox(l, cv.clientWidth / cv.clientHeight || 1); fitBox(x0, y0, x1, y1); }
 function openZoom(l) {
   zoomLeg = l;
+  if (l.m !== cur && maps[l.m]) useMap(l.m);
   $("zoomTitle").textContent = l.name;
   $("zoom").hidden = false;
   $("zoom").appendChild($("stage"));
@@ -2076,7 +2263,7 @@ function openZoom(l) {
 }
 $("zoomClose").addEventListener("click", () => {
   $("zoom").hidden = true;
-  $("stageHome").prepend($("stage"));
+  $("stageHome").insertBefore($("stage"), $("probe"));
   zoomLeg = null; probeI = -1; showProbe();
 });
 
@@ -2120,6 +2307,7 @@ setUnit(savedUnit);
 refreshSliderLabels();
 new ResizeObserver(resize).observe(cv);
 showView("list");
+renderMapFiles();
 refresh();
 icuReady = loadIcuList();
 { const m = startHash.match(/^#act-(.+)$/); if (m) openActivity(decodeURIComponent(m[1])); }
