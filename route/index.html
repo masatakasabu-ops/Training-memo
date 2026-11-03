@@ -1944,7 +1944,7 @@ function openReview() {
 
 function legRowText(l, lr) {
   // ラップがあればラップのタイムと順位、なければGPSから出したタイム
-  if (lr) return lr.t > 0 ? `${fmtDur(lr.t)} ・ ${lr.rank}位/${lr.n}${lr.loss > 0 ? " ・ ミス+" + fmtDur(lr.loss) : ""}` : "ラップなし";
+  if (lr) return lr.t > 0 ? `${fmtDur(lr.t)} ・ ${lr.rank}位/${lr.n}${lr.cumRank ? ` ・ 積算${lr.cumRank}位` : ""}${lr.loss > 0 ? " ・ ミス+" + fmtDur(lr.loss) : ""}` : "ラップなし";
   const st = legStats(l.from.i, l.to.i);
   return `${Number.isFinite(st.sec) ? fmtDur(st.sec) : ""}${Number.isFinite(st.pace) ? " ・ " + fmtPace(st.pace) + "/km" : ""}`;
 }
@@ -1965,9 +1965,11 @@ function parseLap(text) {
     codes: courses[c.getAttribute("course")] || [],
     runners: [...c.querySelectorAll("runner")].map(r => {
       const raw = [...r.querySelectorAll("leg")].map(l => hms(l.getAttribute("laptime")));
-      // パンチ抜け（X）の直後のラップは抜けた分も合算されているので使わない
+      // パンチ抜け（X）の直後のラップは抜けた分も合算されているので使わない。積算（s）は抜けたコントロールだけ空にして先は続ける
+      let sum = 0;
       return { n: r.getAttribute("name") || "", c: r.getAttribute("club") || "", rk: r.getAttribute("rank") || "", res: r.getAttribute("result") || "",
-        t: hms(r.getAttribute("result")), l: raw.map((v, k) => (v != null && (k === 0 || raw[k - 1] != null) ? v : null)) };
+        t: hms(r.getAttribute("result")), l: raw.map((v, k) => (v != null && (k === 0 || raw[k - 1] != null) ? v : null)),
+        s: raw.map(v => (v != null ? (sum += v) : null)) };
     }).filter(r => r.l.some(v => v != null)),
   })).filter(c => c.runners.length);
   return { event: ev?.getAttribute("name") || "", date: (ev?.getAttribute("date") || "").replace(/\//g, "-"), classes };
@@ -1997,15 +1999,24 @@ function perf(r, refs) {
   return { cruise, diff, loss, lossSum, rate: total ? lossSum / total : NaN };
 }
 
+// 各コントロールまでの積算タイム。前に保存したラップには s がないので、ラップを足して出す（パンチ抜けから先は出せない）
+function cumOf(r) {
+  if (r.s) return r.s;
+  let sum = 0;
+  return r.l.map(v => (sum != null && v > 0 ? (sum += v) : (sum = null)));
+}
+
 function lapAnalysis() {
   const lap = route.lap;
   if (!lap) return null;
   const cls = lap.cls, refs = lapRefs(cls), me = cls.runners.find(r => r.n === lap.me) || null;
   const finished = cls.runners.filter(r => r.t && /^\d+$/.test(r.rk)), perfs = finished.map(r => perf(r, refs));
-  const mp = me ? perf(me, refs) : null;
+  const mp = me ? perf(me, refs) : null, cums = cls.runners.map(cumOf), myCum = me ? cumOf(me) : [];
   const rows = refs.map((ref, k) => {
     const ts = cls.runners.map(r => r.l[k]).filter(v => v > 0), t = me?.l[k];
-    return { k, code: cls.codes[k] || "F", best: ts.length ? Math.min(...ts) : null, n: ts.length, t, rank: t > 0 ? ts.filter(v => v < t).length + 1 : null, loss: mp?.loss[k] || 0, diff: mp?.diff[k] ?? null };
+    const cs = cums.map(c => c[k]).filter(v => v > 0), ct = myCum[k];
+    return { k, code: cls.codes[k] || "F", best: ts.length ? Math.min(...ts) : null, n: ts.length, t, rank: t > 0 ? ts.filter(v => v < t).length + 1 : null, loss: mp?.loss[k] || 0, diff: mp?.diff[k] ?? null,
+      cum: ct > 0 ? ct : null, cumRank: ct > 0 ? cs.filter(v => v < ct).length + 1 : null, cumN: cs.length };
   });
   const rankOf = key => (mp && Number.isFinite(mp[key]) ? perfs.filter(p => p[key] < mp[key]).length + 1 : null);
   return { cls, me, mp, rows, nFinished: finished.length, cruiseRank: rankOf("cruise"), rateRank: rankOf("rate") };
@@ -2084,13 +2095,14 @@ function renderLapReview(L, la) {
   const legName = k => (mapped ? L[k].name : `${k ? k : "S"} → ${k === rows.length - 1 ? "F" : k + 1}`);
   box.innerHTML = `<details class="setup"><summary>レッグ別のラップ表</summary><div class="stack" style="margin-top:10px">
     ${mapped ? "" : `<div class="hint err" style="margin-top:0">地図のレッグ数（${L.length}）とラップ（${rows.length}）が違うため、レッグの反省には結び付けていません。</div>`}
-    <div class="tablewrap"><table><thead><tr><th>レッグ</th><th>番号</th><th>ラップ</th><th>順位</th><th>トップ差</th><th>ミス</th></tr></thead><tbody>
+    <div class="tablewrap"><table><thead><tr><th>レッグ</th><th>番号</th><th>ラップ</th><th>順位</th><th>トップ差</th><th>積算</th><th>積算順位</th><th>ミス</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td>${esc(legName(r.k))}</td><td>${esc(r.code)}</td><td>${r.t > 0 ? fmtDur(r.t) : "--"}</td>
       <td class="${r.rank === 1 ? "top" : ""}">${r.rank ? `${r.rank}/${r.n}` : "--"}</td><td>${r.t > 0 ? "+" + fmtDur(r.t - r.best) : ""}</td>
+      <td>${r.cum ? fmtDur(r.cum) : "--"}</td><td class="${r.cumRank === 1 ? "top" : ""}">${r.cumRank ? `${r.cumRank}/${r.cumN}` : "--"}</td>
       <td class="${r.loss > 0 ? "miss" : ""}">${r.diff == null ? "" : r.diff > 0 ? "+" + fmtDur(r.diff) : r.diff < 0 ? "-" + fmtDur(-r.diff) : "0:00"}</td></tr>`).join("")}
     </tbody></table></div>
     ${mapped ? `<div class="hint ok" style="margin-top:0">ミスの推定は、各レッグの「ロス」欄に自動で入ります。自分で書き直したレッグはそのままにします。</div>` : ""}
-    <div class="hint" style="margin-top:0">LapCenter と同じ計算です。巡航：調子よく走れた6割のレッグで、各レッグ上位3人平均の何%のタイムだったか（100%に近いほど速い）。ミス：巡航で走った場合より遅かった秒数（マイナスは速かった分）。ロス欄にはプラスの分を入れます。順位は完走者の中で。</div>
+    <div class="hint" style="margin-top:0">LapCenter と同じ計算です。巡航：調子よく走れた6割のレッグで、各レッグ上位3人平均の何%のタイムだったか（100%に近いほど速い）。ミス：巡航で走った場合より遅かった秒数（マイナスは速かった分）。ロス欄にはプラスの分を入れます。巡航とミス率の順位は完走者の中で。積算順位はそのコントロールを通過した人の中で。</div>
   </div></details>`;
 }
 
@@ -2156,7 +2168,7 @@ function buildLegBody(det, l, lr) {
     Number.isFinite(st.pace) ? `${fmtPace(st.pace)}/km` : null,
   ].filter(Boolean);
   body.innerHTML = `<canvas class="crop" aria-label="${esc(l.name)}の拡大図"></canvas>
-    ${lr ? `<div class="legstats lapline">ラップ ${lr.t > 0 ? `${fmtDur(lr.t)} ・ ${lr.rank}位/${lr.n} ・ トップ+${fmtDur(lr.t - lr.best)}${lr.loss > 0 ? ` ・ ミス推定 +${fmtDur(lr.loss)}` : " ・ ミスなし"}` : "なし（パンチ抜け）"}</div>` : ""}
+    ${lr ? `<div class="legstats lapline">ラップ ${lr.t > 0 ? `${fmtDur(lr.t)} ・ ${lr.rank}位/${lr.n} ・ トップ+${fmtDur(lr.t - lr.best)}${lr.cumRank ? ` ・ 積算 ${fmtDur(lr.cum)}（${lr.cumRank}位/${lr.cumN}）` : ""}${lr.loss > 0 ? ` ・ ミス推定 +${fmtDur(lr.loss)}` : " ・ ミスなし"}` : "なし（パンチ抜け）"}</div>` : ""}
     <div class="legstats">GPS ${parts.join(" ・ ")}</div>
     <div class="bandbar">${st.time.map((t, b) => t > 0 ? `<i style="width:${t / tot * 100}%;background:${cols[b]}" title="${esc(bandLabel(b))}"></i>` : "").reverse().join("")}</div>
     <div class="loss">ロス <input type="text" inputmode="numeric" placeholder="0" value="${n.loss ? (n.loss >= 60 ? fmtDur(n.loss) : n.loss) : ""}"> <span class="hint" style="margin:0">${n.lossSrc === "lap" ? "ラップからの推定（書き直せます）" : "秒（1:30 のようにも書けます）"}</span></div>
