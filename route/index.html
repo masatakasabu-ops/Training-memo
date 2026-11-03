@@ -848,7 +848,8 @@ function legStats(a, b) {
   return { dist, straight, sec, climb: hasEle ? up[b] - up[a] : NaN, ratio: straight > 5 ? dist / straight : NaN, pace: hasTime && dist > 0 ? dist / sec * 3.6 : NaN, time };
 }
 
-const hasNote = n => !!n && (n.loss > 0 || (n.tags && n.tags.length) || (n.text || "").trim() || (n.next || "").trim());
+// 反省を書いたか。ラップから自動で入ったロスだけでは「記入済」にしない
+const hasNote = n => !!n && ((n.loss > 0 && n.lossSrc !== "lap") || (n.tags && n.tags.length) || (n.text || "").trim() || (n.next || "").trim());
 
 function routeSummary() {
   const L = legs(), km = (track.d[rb] - track.d[ra]) / 1000, sec = track.hasTime ? track.t[rb] - track.t[ra] : null;
@@ -1950,8 +1951,6 @@ function legRowText(l, lr) {
 
 /* ---------- ラップ（LapCenter） ---------- */
 
-// 巡航から見込まれるタイムより、これ以上かつこの割合以上遅いレッグをミスとみなす
-const MISS_SEC = 15, MISS_PCT = .15;
 let lapAll = null;   // 読み込んだファイルの全クラス（保存はしない。保存するのは選んだクラスだけ）
 
 function hms(s) { return s && /^\d+(:\d{1,2}){1,2}$/.test(s) ? s.split(":").reduce((a, v) => a * 60 + Number(v), 0) : null; }
@@ -1974,7 +1973,6 @@ function parseLap(text) {
   return { event: ev?.getAttribute("name") || "", date: (ev?.getAttribute("date") || "").replace(/\//g, "-"), classes };
 }
 
-function median(a) { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : NaN; }
 
 // 各レッグの基準タイム = 上位3人の平均
 function lapRefs(cls) {
@@ -1985,23 +1983,18 @@ function lapRefs(cls) {
   });
 }
 
-// 巡航 = 各レッグの「タイム ÷ 基準タイム」の中央値。ミスしたレッグを外して出し直す
+// LapCenter と同じ計算（全日本ミドル M21E のラップで、LapCenter の表示と全レッグ一致を確認）：
+// 巡航 = 速度比（ラップ ÷ 上位平均）の良い6割のレッグで「ラップの合計 ÷ 上位平均の合計」。
+// 各レッグのミス = ラップ − 上位平均 × 巡航（秒に丸める。マイナスは見込みより速かった分）。ミス率 = プラスのミスの合計 ÷ 記録
+const CRUISE_SHARE = .6;
 function perf(r, refs) {
-  const ks = refs.map((_, k) => k).filter(k => r.l[k] > 0 && refs[k] > 0), ratio = k => r.l[k] / refs[k];
-  let cruise = median(ks.map(ratio)), loss = [];
-  const findLoss = () => refs.map((ref, k) => {
-    if (!(r.l[k] > 0 && ref > 0)) return null;
-    const exp = ref * cruise, d = r.l[k] - exp;
-    return d >= MISS_SEC && d >= exp * MISS_PCT ? d : 0;
-  });
-  for (let pass = 0; pass < 3; pass++) {
-    loss = findLoss();
-    const clean = ks.filter(k => !loss[k]);
-    if (clean.length >= 3) cruise = median(clean.map(ratio));
-  }
-  loss = findLoss();
+  const ks = refs.map((_, k) => k).filter(k => r.l[k] > 0 && refs[k] > 0);
+  const good = [...ks].sort((a, b) => r.l[a] / refs[a] - r.l[b] / refs[b]).slice(0, Math.max(1, Math.round(ks.length * CRUISE_SHARE)));
+  const cruise = good.length ? good.reduce((s, k) => s + r.l[k], 0) / good.reduce((s, k) => s + refs[k], 0) : NaN;
+  const diff = refs.map((ref, k) => (r.l[k] > 0 && ref > 0 ? Math.round(r.l[k] - ref * cruise) : null));
+  const loss = diff.map(d => (d == null ? null : Math.max(0, d)));
   const lossSum = loss.reduce((s, v) => s + (v || 0), 0), total = r.t || ks.reduce((s, k) => s + r.l[k], 0);
-  return { cruise, loss, lossSum, rate: total ? lossSum / total : NaN };
+  return { cruise, diff, loss, lossSum, rate: total ? lossSum / total : NaN };
 }
 
 function lapAnalysis() {
@@ -2012,7 +2005,7 @@ function lapAnalysis() {
   const mp = me ? perf(me, refs) : null;
   const rows = refs.map((ref, k) => {
     const ts = cls.runners.map(r => r.l[k]).filter(v => v > 0), t = me?.l[k];
-    return { k, code: cls.codes[k] || "F", best: ts.length ? Math.min(...ts) : null, n: ts.length, t, rank: t > 0 ? ts.filter(v => v < t).length + 1 : null, loss: mp?.loss[k] || 0 };
+    return { k, code: cls.codes[k] || "F", best: ts.length ? Math.min(...ts) : null, n: ts.length, t, rank: t > 0 ? ts.filter(v => v < t).length + 1 : null, loss: mp?.loss[k] || 0, diff: mp?.diff[k] ?? null };
   });
   const rankOf = key => (mp && Number.isFinite(mp[key]) ? perfs.filter(p => p[key] < mp[key]).length + 1 : null);
   return { cls, me, mp, rows, nFinished: finished.length, cruiseRank: rankOf("cruise"), rateRank: rankOf("rate") };
@@ -2094,28 +2087,42 @@ function renderLapReview(L, la) {
     <div class="tablewrap"><table><thead><tr><th>レッグ</th><th>番号</th><th>ラップ</th><th>順位</th><th>トップ差</th><th>ミス</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td>${esc(legName(r.k))}</td><td>${esc(r.code)}</td><td>${r.t > 0 ? fmtDur(r.t) : "--"}</td>
       <td class="${r.rank === 1 ? "top" : ""}">${r.rank ? `${r.rank}/${r.n}` : "--"}</td><td>${r.t > 0 ? "+" + fmtDur(r.t - r.best) : ""}</td>
-      <td class="${r.loss > 0 ? "miss" : ""}">${r.loss > 0 ? "+" + fmtDur(r.loss) : ""}</td></tr>`).join("")}
+      <td class="${r.loss > 0 ? "miss" : ""}">${r.diff == null ? "" : r.diff > 0 ? "+" + fmtDur(r.diff) : r.diff < 0 ? "-" + fmtDur(-r.diff) : "0:00"}</td></tr>`).join("")}
     </tbody></table></div>
-    ${mapped ? `<button class="ghost" type="button" id="lapFill">ミスの推定を「ロス」欄に入れる（未入力のレッグだけ）</button>` : ""}
-    <div class="hint" id="lapFillMsg" style="margin-top:0">巡航：ミスのないレッグで、各レッグ上位3人平均の何%で走れたか（100%に近いほど速い）。ミス：巡航から見込まれるタイムより${MISS_SEC}秒以上かつ${MISS_PCT * 100}%以上遅かった分。順位は完走者の中で。</div>
+    ${mapped ? `<div class="hint ok" style="margin-top:0">ミスの推定は、各レッグの「ロス」欄に自動で入ります。自分で書き直したレッグはそのままにします。</div>` : ""}
+    <div class="hint" style="margin-top:0">LapCenter と同じ計算です。巡航：調子よく走れた6割のレッグで、各レッグ上位3人平均の何%のタイムだったか（100%に近いほど速い）。ミス：巡航で走った場合より遅かった秒数（マイナスは速かった分）。ロス欄にはプラスの分を入れます。順位は完走者の中で。</div>
   </div></details>`;
-  $("lapFill")?.addEventListener("click", () => {
-    let n = 0;
-    L.forEach((l, k) => {
-      const loss = Math.round(rows[k].loss), note = route.notes[l.key] || (route.notes[l.key] = { loss: 0, tags: [], text: "", next: "" });
-      if (loss > 0 && !note.loss) { note.loss = loss; n++; }
-    });
-    scheduleNoteSave(); renderReview();
-    saveState(n ? `${n}レッグのロス欄に入れました` : "入れられるレッグはありませんでした");
-  });
 }
+
+// ラップのミスの推定を、全レッグのロス欄に入れる。自分で書き直したロス（lossSrc が "lap" 以外で値があるもの）は変えない。
+// ラップや自分の選択を変えたときも、推定で入れた分は入れ直す。変わったら true
+function applyLapLoss(L, la) {
+  const rows = lapRowsFor(L, la);
+  let changed = false;
+  if (!rows) {
+    // ラップを外した・レッグ数が合わなくなったときは、推定で入れた分を消す（合えばまた入る）
+    for (const n of Object.values(route.notes)) if (n.lossSrc === "lap" && n.loss) { n.loss = 0; changed = true; }
+    return changed;
+  }
+  L.forEach((l, k) => {
+    const loss = Math.round(rows[k].loss || 0), n = route.notes[l.key];
+    if (n && n.lossSrc !== "lap" && n.loss > 0) return;
+    if (!n && !loss) return;
+    const note = n || (route.notes[l.key] = { loss: 0, tags: [], text: "", next: "" });
+    if (note.loss !== loss || note.lossSrc !== "lap") { note.loss = loss; note.lossSrc = "lap"; changed = true; }
+  });
+  return changed;
+}
+
 function legChip(n) {
-  if (!hasNote(n)) return '<span class="chip todo">未記入</span>';
-  return n.loss ? `<span class="chip loss">ロス${fmtDur(n.loss)}</span>` : '<span class="chip done">記入済</span>';
+  const loss = n?.loss ? `<span class="chip loss">ロス${fmtDur(n.loss)}</span>` : "";
+  if (!hasNote(n)) return loss + '<span class="chip todo">未記入</span>';
+  return loss || '<span class="chip done">記入済</span>';
 }
 
 function renderReview() {
   const box = $("legsBox"), L = legs(), la = lapAnalysis(), lrs = lapRowsFor(L, la);
+  if (applyLapLoss(L, la)) scheduleNoteSave();
   renderLapReview(L, la);
   box.innerHTML = "";
   L.forEach((l, k) => {
@@ -2152,7 +2159,7 @@ function buildLegBody(det, l, lr) {
     ${lr ? `<div class="legstats lapline">ラップ ${lr.t > 0 ? `${fmtDur(lr.t)} ・ ${lr.rank}位/${lr.n} ・ トップ+${fmtDur(lr.t - lr.best)}${lr.loss > 0 ? ` ・ ミス推定 +${fmtDur(lr.loss)}` : " ・ ミスなし"}` : "なし（パンチ抜け）"}</div>` : ""}
     <div class="legstats">GPS ${parts.join(" ・ ")}</div>
     <div class="bandbar">${st.time.map((t, b) => t > 0 ? `<i style="width:${t / tot * 100}%;background:${cols[b]}" title="${esc(bandLabel(b))}"></i>` : "").reverse().join("")}</div>
-    <div class="loss">ロス <input type="text" inputmode="numeric" placeholder="0" value="${n.loss ? (n.loss >= 60 ? fmtDur(n.loss) : n.loss) : ""}"> <span class="hint" style="margin:0">秒（1:30 のようにも書けます）</span></div>
+    <div class="loss">ロス <input type="text" inputmode="numeric" placeholder="0" value="${n.loss ? (n.loss >= 60 ? fmtDur(n.loss) : n.loss) : ""}"> <span class="hint" style="margin:0">${n.lossSrc === "lap" ? "ラップからの推定（書き直せます）" : "秒（1:30 のようにも書けます）"}</span></div>
     <div class="tags">${[...TAGS, GOOD].map(t => `<button type="button" class="${t === GOOD ? "good" : ""}" aria-pressed="${n.tags.includes(t)}">${esc(t)}</button>`).join("")}</div>
     <label>反省（何が起きたか）<textarea data-k="text">${esc(n.text)}</textarea></label>
     <label>次はこうする<textarea data-k="next" style="min-height:52px">${esc(n.next)}</textarea></label>`;
@@ -2163,7 +2170,8 @@ function buildLegBody(det, l, lr) {
   lossIn.addEventListener("input", () => {
     const v = parseDur(lossIn.value);
     lossIn.style.borderColor = Number.isFinite(v) ? "" : "var(--warn)";
-    if (Number.isFinite(v)) { n.loss = v; changed(); }
+    // 自分で書いたロスは、ラップを読み直しても上書きしない
+    if (Number.isFinite(v)) { n.loss = v; n.lossSrc = "manual"; lossIn.nextElementSibling.textContent = "秒（1:30 のようにも書けます）"; changed(); }
   });
   body.querySelectorAll(".tags button").forEach(b => b.addEventListener("click", () => {
     const t = b.textContent, on = !n.tags.includes(t);
