@@ -60,7 +60,7 @@ h2 small { font-weight: 400; letter-spacing: 0; margin-left: 6px; }
 section { min-width: 0; }
 .view { display: grid; gap: 22px; }
 
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--line); }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--line); }
 .tabs button {
   min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--muted);
   font: inherit; font-weight: 700; cursor: pointer;
@@ -194,6 +194,22 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 .actual.none { color: var(--muted); font-family: var(--font-body); }
 .emptyday { font-size: .8rem; color: var(--muted); }
 
+/* 評価（毎晩23時にクラウドのコーチが Intervals.icu のウェルネスのコメント欄に書く） */
+.evals { display: grid; gap: 12px; }
+.eval { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.eval.latest { border: 2px solid var(--accent); }
+.eval .dayhead small { font-family: var(--font-num); font-size: .7rem; color: var(--muted); font-weight: 400; }
+.eval .runs { font-family: var(--font-num); font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; }
+.eval .lead { margin: 0; font-weight: 700; line-height: 1.5; text-wrap: pretty; }
+.eval .line { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: baseline; font-size: .92rem; }
+.eval .line.plain { display: block; }
+.eval .k { font-size: .7rem; font-weight: 700; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  background: color-mix(in srgb, var(--forest) 16%, transparent); color: var(--forest); }
+.eval .k.next { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.eval .k.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.eval.older .line, .eval.older .lead { font-size: .85rem; }
+.evalnote { font-size: .8rem; color: var(--muted); }
+
 /* 種目の図解 */
 .exlib { display: grid; gap: 22px; }
 .exgroup { display: grid; gap: 10px; scroll-margin-top: 16px; }
@@ -282,6 +298,7 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
 
   <div class="tabs" role="tablist">
     <button id="tab-memo" type="button" role="tab" aria-selected="true">記録</button>
+    <button id="tab-eval" type="button" role="tab" aria-selected="false">評価</button>
     <button id="tab-plan" type="button" role="tab" aria-selected="false">予定</button>
     <button id="tab-ex" type="button" role="tab" aria-selected="false">種目</button>
   </div>
@@ -323,6 +340,11 @@ summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
       <textarea id="memo" placeholder="例：登り後半で脚が止まった"></textarea>
       <div id="tags" class="tags"></div>
     </section>
+  </div>
+
+  <div id="evalView" class="view" hidden>
+    <div id="evals" class="evals"><div class="hint">読み込み中…</div></div>
+    <div class="evalnote">毎晩23時ごろ、その日の練習と「記録」タブのメモをもとにコーチが評価を書きます。メモは23時までに保存してください。</div>
   </div>
 
   <div id="planView" class="view" hidden>
@@ -1458,21 +1480,85 @@ window.addEventListener("hashchange", openExFromHash);
 
 /* ---------- 共通 ---------- */
 
+/* ---------- 評価 ---------- */
+
+const EVAL_RE = /【コーチ評価】([\s\S]*?)【ここまで】/;
+const EVAL_KEYS = [["よかった点", ""], ["次への一言", "next"], ["注意", "warn"]];
+
+function evalLines(text) {
+  return text.split("\n").map(s => s.trim()).filter(Boolean).map((line, i) => {
+    const m = line.match(/^(よかった点|次への一言|注意)\s*[:：]\s*(.*)$/);
+    if (m) {
+      const cls = EVAL_KEYS.find(([k]) => k === m[1])[1];
+      return `<p class="line"><span class="k ${cls}">${m[1]}</span><span>${esc(m[2])}</span></p>`;
+    }
+    return i === 0 ? `<p class="lead">${esc(line)}</p>` : `<p class="line plain">${esc(line)}</p>`;
+  }).join("");
+}
+
+async function loadEvals() {
+  const box = $("evals");
+  const today = new Date(), from = addDays(today, -20);
+  try {
+    const aid = encodeURIComponent(cfg.aid);
+    const [wells, runs] = await Promise.all([
+      api("GET", `/athlete/${aid}/wellness?oldest=${ymd(from)}&newest=${ymd(today)}`),
+      api("GET", `/athlete/${aid}/activities?oldest=${ymd(from)}&newest=${ymd(today)}`),
+    ]);
+    const byDay = {};
+    for (const a of runs || []) (byDay[(a.start_date_local || "").slice(0, 10)] ||= []).push(a);
+    const items = (wells || []).map(w => {
+      const m = (w.comments || "").match(EVAL_RE);
+      if (!m) return null;
+      // 最後の行「（11/16 23:04 作成）」は日付の横に小さく出す
+      let body = m[1].trim(), made = "";
+      const t = body.match(/\n?（([^）]*作成)）\s*$/);
+      if (t) { made = t[1]; body = body.slice(0, t.index).trim(); }
+      return { day: w.id, body, made };
+    }).filter(Boolean).sort((a, b) => b.day.localeCompare(a.day));
+
+    let html = "";
+    if (!items.length || items[0].day !== ymd(today)) {
+      html += `<div class="eval"><div class="dayhead"><span class="dlabel">今日<span class="wd">${today.getMonth() + 1}/${today.getDate()}（${WD[today.getDay()]}）</span></span></div>
+        <div class="evalnote">今日の評価は23時ごろに届きます。</div></div>`;
+    }
+    items.forEach((it, i) => {
+      const d = new Date(it.day + "T00:00:00");
+      const label = it.day === ymd(today) ? "今日" : it.day === ymd(addDays(today, -1)) ? "昨日" : "";
+      const acts = (byDay[it.day] || []).filter(a => a.type !== "WeightTraining")
+        .map(a => `${a.name} ${((a.distance || 0) / 1000).toFixed(1)}km`).join(" ・ ");
+      html += `<article class="eval${i === 0 ? " latest" : " older"}">
+        <div class="dayhead"><span class="dlabel">${label ? `${label}<span class="wd">` : ""}${d.getMonth() + 1}/${d.getDate()}${label ? "" : `<span class="wd">`}（${WD[d.getDay()]}）</span></span><small>${esc(it.made)}</small></div>
+        ${acts ? `<div class="runs">${esc(acts)}</div>` : ""}
+        ${evalLines(it.body)}
+      </article>`;
+    });
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = `<div class="hint">${esc(e.message)}</div>`;
+  }
+}
+
 let planLoaded = false;
 function setTab(tab, load = true) {
   $("tab-memo").setAttribute("aria-selected", String(tab === "memo"));
+  $("tab-eval").setAttribute("aria-selected", String(tab === "eval"));
   $("tab-plan").setAttribute("aria-selected", String(tab === "plan"));
   $("tab-ex").setAttribute("aria-selected", String(tab === "ex"));
   $("memoView").hidden = tab !== "memo";
   $("memoBar").hidden = tab !== "memo";
+  $("evalView").hidden = tab !== "eval";
   $("planView").hidden = tab !== "plan";
   $("exView").hidden = tab !== "ex";
   if (tab === "ex") buildLibrary();
   showStatus("", "");
   try { localStorage.setItem("tab", tab); } catch {}
+  // 評価は夜に増えるので、開くたびに読み直す
+  if (load && tab === "eval" && cfg.aid && cfg.key) loadEvals();
   if (load && tab === "plan" && !planLoaded && cfg.aid && cfg.key) { planLoaded = true; loadMonth(); }
 }
 $("tab-memo").addEventListener("click", () => setTab("memo"));
+$("tab-eval").addEventListener("click", () => setTab("eval"));
 $("tab-plan").addEventListener("click", () => setTab("plan"));
 $("tab-ex").addEventListener("click", () => setTab("ex"));
 
@@ -1488,6 +1574,7 @@ function start() {
   loadTotals();
   planLoaded = !$("planView").hidden;
   if (planLoaded) loadMonth();
+  if (!$("evalView").hidden) loadEvals();
 }
 
 $("saveCfg").addEventListener("click", () => {
